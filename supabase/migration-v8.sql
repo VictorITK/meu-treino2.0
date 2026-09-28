@@ -1,45 +1,5 @@
--- Meu Treino: esquema inicial Supabase/PostgreSQL.
--- Execute no SQL Editor do Supabase antes de usar a aplicação.
-
-create extension if not exists pgcrypto;
-
-create table if not exists public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  name text,
-  height numeric(4,2),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.user_snapshots (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  data jsonb not null default '{}'::jsonb,
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.exercises (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade,
-  name text not null,
-  slug text not null,
-  group_name text,
-  muscles text,
-  secondary_muscles text,
-  movement_type text,
-  equipment text,
-  difficulty text,
-  exercise_type text,
-  description text,
-  instructions text,
-  image_url text,
-  video_url text,
-  active boolean not null default true,
-  is_official boolean not null default false,
-  is_favorite boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
+-- Meu Treino v8 — migration for an existing v7 database.
+-- Execute once in Supabase SQL Editor. Safe to re-run.
 -- Migration-safe columns for existing installations.
 alter table public.exercises add column if not exists slug text;
 alter table public.exercises add column if not exists secondary_muscles text;
@@ -259,50 +219,8 @@ where not exists (
   select 1 from public.exercises e where e.is_official=true and e.slug=v.slug
 );
 
--- RLS
-alter table public.profiles enable row level security;
-alter table public.user_snapshots enable row level security;
-alter table public.exercises enable row level security;
-alter table public.exercise_videos enable row level security;
-alter table public.workouts enable row level security;
-alter table public.workout_exercises enable row level security;
-alter table public.workout_sessions enable row level security;
-alter table public.workout_sets enable row level security;
-alter table public.weight_records enable row level security;
-alter table public.cardio_records enable row level security;
-alter table public.photos enable row level security;
-alter table public.favorites enable row level security;
-alter table public.ai_conversations enable row level security;
-alter table public.ai_generated_workouts enable row level security;
-alter table public.trash enable row level security;
-alter table public.audit_logs enable row level security;
-alter table public.settings enable row level security;
 
--- User-owned tables
-do $$ declare t text; begin
-for t in select unnest(array['profiles','user_snapshots','exercises','exercise_videos','workouts','workout_sessions','weight_records','cardio_records','photos','favorites','ai_conversations','ai_generated_workouts','trash','audit_logs','settings']) loop
-  execute format('drop policy if exists "owner_select" on public.%I',t);
-  execute format('drop policy if exists "owner_insert" on public.%I',t);
-  execute format('drop policy if exists "owner_update" on public.%I',t);
-  execute format('drop policy if exists "owner_delete" on public.%I',t);
-  execute format('create policy "owner_select" on public.%I for select using (user_id = auth.uid() OR id = auth.uid())',t);
-  execute format('create policy "owner_insert" on public.%I for insert with check (user_id = auth.uid() OR id = auth.uid())',t);
-  execute format('create policy "owner_update" on public.%I for update using (user_id = auth.uid() OR id = auth.uid()) with check (user_id = auth.uid() OR id = auth.uid())',t);
-  execute format('create policy "owner_delete" on public.%I for delete using (user_id = auth.uid() OR id = auth.uid())',t);
-end loop;
-end $$;
-
--- workout_exercises and workout_sets derive ownership through parent rows.
-drop policy if exists "workout_exercises_owner" on public.workout_exercises;
-create policy "workout_exercises_owner" on public.workout_exercises for all
-using (exists(select 1 from public.workouts w where w.id=workout_id and w.user_id=auth.uid()))
-with check (exists(select 1 from public.workouts w where w.id=workout_id and w.user_id=auth.uid()));
-
-drop policy if exists "workout_sets_owner" on public.workout_sets;
-create policy "workout_sets_owner" on public.workout_sets for all
-using (exists(select 1 from public.workout_sessions s where s.id=session_id and s.user_id=auth.uid()))
-with check (exists(select 1 from public.workout_sessions s where s.id=session_id and s.user_id=auth.uid()));
-
--- Official exercises are readable by everyone, but only service/admin can mutate them.
+-- Keep official exercises readable without exposing user-owned records.
 drop policy if exists "official_exercises_read" on public.exercises;
-create policy "official_exercises_read" on public.exercises for select using (is_official=true or user_id=auth.uid());
+create policy "official_exercises_read" on public.exercises
+for select using (is_official=true or user_id=auth.uid());

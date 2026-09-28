@@ -1,48 +1,66 @@
-# Meu Treino PWA — v3
+# Meu Treino PWA — v7
 
-Versão evoluída do PWA existente, mantendo GitHub Pages e funcionamento offline.
+Esta versão evolui o PWA existente de forma incremental.
 
-## Principais mudanças
-- Descanso padrão de 40 s com início automático e apito de 3 bipes via Web Audio API.
-- Histórico completo de sessões.
-- Memória da última carga e sugestão de progressão sem alteração automática.
-- Imagens locais dos exercícios.
-- Registro de peso e gráficos.
-- Cardio associado ao treino.
-- Fotos locais e comparação.
-- Dashboard, calendário e evolução.
-- Backup/restauração JSON.
-- Tema claro/escuro/automático.
-- Migração da estrutura antiga `localStorage.meuTreinoPWA`.
-- Service Worker v3 com cache atualizado e limpeza de caches antigos.
-- Workflow do GitHub Pages preservado/compatível.
+## Arquivos principais
+- `index.html`
+- `css/app.css`
+- `js/app.js`
+- `js/config.js`
+- `sw.js`
+- `manifest.json`
+- `supabase/schema.sql`
+- `supabase/config.toml`
+- `supabase/functions/ai-chat/index.ts`
+- `supabase/functions/youtube-search/index.ts`
 
-## Observação sobre iPhone
-O Web Audio precisa de uma interação do usuário para ser desbloqueado pelo Safari. O app inicializa o áudio ao iniciar o treino ou ao concluir uma série. O iOS pode suspender JavaScript e áudio quando a PWA fica realmente em segundo plano; por isso o app não promete áudio garantido durante suspensão completa do processo pelo sistema.
+## O que foi incorporado
+- Conta por usuário com Supabase Auth.
+- Recuperação de senha.
+- Dados locais em IndexedDB.
+- Sincronização de snapshot por usuário.
+- Migração dos dados locais após login.
+- RLS no banco.
+- Histórico, peso/IMC, cardio, fotos e treinos.
+- Lixeira e restauração.
+- Audit log local + tabela de auditoria preparada.
+- Banco de exercícios oficiais/personalizados.
+- RIR nas séries.
+- Vídeos YouTube por Edge Function, sem inventar URLs.
+- Pergunte à IA por Edge Function.
+- Treino Inteligente local baseado no banco/histórico.
+- Estrutura SQL para entidades normalizadas.
+- PWA/offline.
+- Descanso inicial de 40 s, configurável pelo usuário entre 5 e 600 s.
+- Apito e vibração ao terminar o descanso.
+- Backup JSON.
 
-## Instalação
-Substitua os arquivos do repositório pelos desta pasta e faça push para a branch configurada pelo workflow.
+## Configuração Supabase
+1. Crie um projeto Supabase.
+2. Execute `supabase/schema.sql` no SQL Editor.
+3. Copie `js/config.example.js` para `js/config.js`.
+4. Preencha URL e Publishable Key.
+5. Configure Auth > URL Configuration para a URL do GitHub Pages.
+6. Configure confirmação de e-mail conforme sua preferência.
 
+## Edge Functions
+Instale/configure a CLI do Supabase e faça deploy:
+- `supabase functions deploy ai-chat`
+- `supabase functions deploy youtube-search`
 
-## Programa configurado no aplicativo
+Configure os secrets no ambiente do Supabase:
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL` (opcional)
+- `YOUTUBE_API_KEY`
 
-### Treino A — Membros superiores
-1. Supino na máquina — 3×8–12 — RIR 2 — 120 s
-2. Puxada frontal — 3×8–12 — RIR 2 — 120 s
-3. Remada sentada — 3×8–12 — RIR 2 — 120 s
-4. Desenvolvimento de ombros na máquina — 3×8–12 — RIR 2 — 120 s
-5. Voador peitoral — 3×10–15 — RIR 1–2 — 90 s
-6. Rosca direta com halteres — 2×10–15 — RIR 1–2 — 75 s
-7. Rosca martelo com halteres — 2×10–15 — RIR 1–2 — 75 s
-8. Tríceps na polia com corda — 2×10–15 — RIR 1–2 — 75 s
+Nunca coloque essas chaves no frontend.
 
-### Treino B — Membros inferiores
-1. Leg Press — 4×8–12 — RIR 2 — 150 s
-2. Cadeira flexora — 3×10–15 — RIR 2 — 105 s
-3. Cadeira extensora — 3×10–15 — RIR 2 — 105 s
-4. Hip thrust / máquina de glúteos — 3×8–12 — RIR 2 — 120 s
-5. Cadeira abdutora — 2×12–15 — RIR 1–2 — 75 s
-6. Panturrilha na máquina ou no leg press — 3×10–15 — RIR 1–2 — 75 s
-7. Abdominal na máquina OU Pallof Press — 2×10–15 — RIR 2 — 75 s
+## Limitações reais
+- A sincronização do cliente desta versão usa `user_snapshots` como camada de recuperação rápida; as tabelas normalizadas estão preparadas para a próxima etapa de sincronização granular.
+- Fotos continuam sendo mantidas localmente nesta primeira migração; o schema já possui Storage metadata para a futura subida ao Supabase Storage.
+- A integração de caminhada/corrida com plataformas de saúde ainda é uma estrutura futura, não uma integração Bluetooth universal.
+- Áudio em iOS depende das regras do navegador e pode ser suspenso quando o processo da PWA é colocado em segundo plano.
+- A IA e busca do YouTube só funcionam depois das Edge Functions e respectivos secrets serem configurados.
 
-O cronômetro global inicia em 40 segundos por padrão, conforme a especificação do aplicativo. O intervalo específico do exercício é aplicado automaticamente ao concluir uma série.
+## Testes
+Teste cadastro, login, recuperação, offline, sincronização, migração, treino, cronômetro, 40 s inicial, mudança do descanso, peso/IMC, lixeira, exercícios, vídeos, IA e PWA antes de publicar em produção.

@@ -14,40 +14,112 @@
 </head>
 <body>
 <div id="toast" class="toast" role="status"></div>
+
+<section id="authView" class="auth-view">
+  <div class="auth-card">
+    <div class="brand-mark">🏋️</div>
+    <h1>Meu Treino</h1>
+    <p class="muted">Seu diário de treino, sincronizado e disponível offline.</p>
+    <div class="auth-tabs"><button id="loginTab" class="active">Entrar</button><button id="signupTab">Criar conta</button></div>
+    <form id="loginForm">
+      <label>E-mail<input id="loginEmail" type="email" autocomplete="email" required></label>
+      <label>Senha<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <button class="primary big-btn" type="submit">Entrar</button>
+      <button class="link-btn" type="button" id="forgotPasswordBtn">Esqueci minha senha</button>
+    </form>
+    <form id="signupForm" class="hidden">
+      <label>Nome<input id="signupName" type="text" autocomplete="name" required></label>
+      <label>E-mail<input id="signupEmail" type="email" autocomplete="email" required></label>
+      <label>Senha<input id="signupPassword" type="password" minlength="8" autocomplete="new-password" required></label>
+      <label>Confirme a senha<input id="signupPassword2" type="password" minlength="8" autocomplete="new-password" required></label>
+      <button class="primary big-btn" type="submit">Criar conta</button>
+    </form>
+    <div class="muted small auth-note">Você pode continuar usando os dados locais quando estiver sem internet. A sincronização ocorre quando a conexão voltar.</div>
+  </div>
+</section>
+
+<div id="appShell" class="hidden">
 <header class="topbar">
-  <div><strong>MEU TREINO</strong><div class="sub">Diário de musculação</div></div>
+  <div><strong>MEU TREINO</strong><div class="sub" id="userLabel">Diário de musculação</div></div>
   <button id="settingsBtn" class="icon-btn" aria-label="Configurações">⚙️</button>
 </header>
 <main id="app">
-  <section id="homeView" class="view active">
-    <div id="installBox" class="install"><b>📲 Instalar no iPhone</b><div class="sub">No Safari: Compartilhar → Adicionar à Tela de Início.</div></div>
-    <div id="dashboard" class="dashboard"></div>
-    <button id="startWorkoutBtn" class="primary big-btn">▶ INICIAR TREINO</button>
-    <div class="section-title">Acesso rápido</div>
-    <div class="quick-grid"><button data-view="historyView">📚 Histórico</button><button data-view="weightView">⚖️ Peso</button><button data-view="photosView">📸 Fotos</button><button data-view="evolutionView">📈 Evolução</button></div>
+<section id="homeView" class="view active">
+  <div id="installBox" class="install"><b>📲 Instalar no iPhone</b><div class="sub">No Safari: Compartilhar → Adicionar à Tela de Início.</div></div>
+  <div id="dashboard" class="dashboard"></div>
+  <button id="startWorkoutBtn" class="primary big-btn">▶ INICIAR TREINO</button>
+  <div class="section-title">Acesso rápido</div>
+  <div class="quick-grid">
+    <button data-view="historyView">📚 Histórico</button><button data-view="weightView">⚖️ Peso</button>
+    <button data-view="exerciseView">📚 Exercícios</button><button data-view="photosView">📸 Fotos</button>
+    <button data-view="evolutionView">📈 Evolução</button><button data-view="aiView">🤖 Pergunte à IA</button>
+    <button data-view="smartView">✨ Treino Inteligente</button><button data-view="calendarView">📅 Calendário</button>
+  </div>
+</section>
+
+<section id="workoutView" class="view">
+  <div class="workout-header"><div><div class="eyebrow">TREINO</div><h1 id="workoutTitle">A — Superiores</h1></div><button id="finishWorkoutBtn" class="success">Finalizar</button></div>
+  <div class="tabs"><button id="tabA">A · Superiores</button><button id="tabB">B · Inferiores</button></div>
+  <section class="timer"><div class="muted">DESCANSO</div><div id="time" class="time">00:40</div><div class="timer-state" id="timerState">Pronto</div>
+    <div class="actions"><button id="startTimer" class="primary">Iniciar</button><button id="pauseTimer">Pausar</button><button id="resumeTimer">Retomar</button><button id="resetTimer">Reiniciar</button><button id="plus10">+10s</button><button id="plus30">+30s</button></div>
   </section>
-  <section id="workoutView" class="view">
-    <div class="workout-header"><div><div class="eyebrow">TREINO</div><h1 id="workoutTitle">A — Superiores</h1></div><button id="finishWorkoutBtn" class="success">Finalizar</button></div>
-    <div class="tabs"><button id="tabA">A · Superiores</button><button id="tabB">B · Inferiores</button></div>
-    <section class="timer"><div class="muted">DESCANSO</div><div id="time" class="time">00:40</div><div class="timer-state" id="timerState">Pronto</div>
-      <div class="actions"><button id="startTimer" class="primary">Iniciar</button><button id="pauseTimer">Pausar</button><button id="resumeTimer">Retomar</button><button id="resetTimer">Reiniciar</button><button id="plus10">+10s</button><button id="plus30">+30s</button></div>
-    </section>
-    <div id="workoutSummary" class="stats"></div><section id="workoutExercises"></section>
-    <section class="card cardio-card"><div class="section-title">🏃 CARDIO</div><div class="form-grid">
-      <label>Tipo<select id="cardioType"><option>Esteira</option><option>Bicicleta</option><option>Elíptico</option><option>Caminhada</option><option>Outro</option></select></label>
-      <label>Tempo (min)<input id="cardioTime" type="number" min="0" step="1" inputmode="numeric"></label><label>Distância (km)<input id="cardioDistance" type="number" min="0" step="0.01" inputmode="decimal"></label>
-      <label>Calorias<input id="cardioCalories" type="number" min="0" step="1" inputmode="numeric"></label><label>Velocidade média<input id="cardioSpeed" type="number" min="0" step="0.1" inputmode="decimal"></label>
-    </div><label>Observações<textarea id="cardioNotes" rows="2" placeholder="Observações do cardio"></textarea></label></section>
-    <label class="card notes-card">Observações do treino<textarea id="workoutNotes" rows="3" placeholder="Como foi o treino hoje?"></textarea></label>
-  </section>
-  <section id="historyView" class="view"><div class="page-head"><h1>Histórico</h1></div><div id="historyList"></div><div class="section-title">Histórico por exercício</div><select id="exerciseHistorySelect"></select><div id="exerciseHistory"></div></section>
-  <section id="weightView" class="view"><div class="page-head"><h1>Peso</h1></div><div id="weightStats" class="stats"></div><div id="currentBmi" class="stats"></div><div class="card"><div class="section-title">Dados corporais</div><div class="form-grid"><label>Altura (m)<input id="heightInput" type="number" min="0.5" max="2.5" step="0.01" inputmode="decimal" placeholder="Ex.: 1,75"></label></div><button id="saveHeightBtn" class="primary">Salvar altura</button><div class="muted small">A altura fica salva no aplicativo e é usada para calcular automaticamente o IMC.</div></div><div class="card"><div class="section-title">Novo registro</div><div class="form-grid"><label>Peso (kg)<input id="weightInput" type="number" min="0" step="0.1" inputmode="decimal"></label><label>Data<input id="weightDate" type="date"></label><label>Horário<input id="weightTime" type="time"></label></div><label>Observação<textarea id="weightNotes" rows="2"></textarea></label><button id="addWeightBtn" class="primary">Salvar peso</button></div><div class="card chart-card"><canvas id="weightChart" height="220"></canvas></div><div id="weightList"></div></section>
-  <section id="photosView" class="view"><div class="page-head"><h1>Fotos</h1></div><div class="card"><div class="section-title">Nova foto de evolução</div><label>Foto<input id="photoFile" type="file" accept="image/*" capture="environment"></label><div class="form-grid"><label>Data<input id="photoDate" type="date"></label><label>Tipo<select id="photoType"><option>Frente</option><option>Lado</option><option>Costas</option><option>Outro</option></select></label></div><label>Observação<textarea id="photoNotes" rows="2"></textarea></label><button id="addPhotoBtn" class="primary">Salvar foto</button><div class="muted small">A foto fica somente no armazenamento local deste dispositivo.</div></div><div id="photoGallery" class="photo-grid"></div><div class="card"><div class="section-title">Comparar duas fotos</div><div class="form-grid"><select id="comparePhotoA"></select><select id="comparePhotoB"></select></div><div id="photoCompare" class="compare"></div></div></section>
-  <section id="evolutionView" class="view"><div class="page-head"><h1>Evolução</h1></div><div id="evolutionStats" class="stats stats-wide"></div><div class="card chart-card"><div class="section-title">Peso</div><canvas id="evolutionWeightChart" height="220"></canvas></div><div class="card chart-card"><div class="section-title">Volume por treino</div><canvas id="volumeChart" height="220"></canvas></div><div id="exerciseProgress" class="card"></div></section>
-  <section id="calendarView" class="view"><div class="page-head"><h1>Calendário</h1></div><div class="calendar-controls"><button id="prevMonth">‹</button><strong id="calendarMonth"></strong><button id="nextMonth">›</button></div><div id="calendarGrid" class="calendar-grid"></div><div id="calendarDetails"></div></section>
-  <section id="settingsView" class="view"><div class="page-head"><h1>Configurações</h1></div><div class="card"><div class="section-title">Cronômetro</div><label>Descanso padrão (segundos)<input id="defaultRest" type="number" value="40" readonly></label><label class="switch"><input id="soundEnabled" type="checkbox"><span>🔊 Apito ao terminar</span></label><label class="switch"><input id="autoStartRest" type="checkbox"><span>Iniciar descanso automaticamente</span></label></div><div class="card"><div class="section-title">Aparência</div><select id="themeSelect"><option value="auto">⚙️ Automático</option><option value="light">☀️ Claro</option><option value="dark">🌙 Escuro</option></select></div><div class="card"><div class="section-title">Backup</div><p class="muted">O backup inclui treinos, cargas, peso, cardio, configurações e fotos quando o navegador permitir.</p><div class="actions"><button id="exportBackup" class="primary">⬇️ Exportar backup</button><button id="importBackup">⬆️ Importar backup</button><input id="backupFile" type="file" accept="application/json" hidden></div></div><div class="card"><div class="section-title">Dados</div><button id="addExerciseBtn">+ Adicionar exercício</button><button id="resetAllBtn" class="danger">Apagar todos os dados</button></div></section>
+  <div id="workoutSummary" class="stats"></div><section id="workoutExercises"></section>
+  <section class="card cardio-card"><div class="section-title">🏃 CARDIO</div><div class="form-grid">
+    <label>Tipo<select id="cardioType"><option>Esteira</option><option>Bicicleta</option><option>Elíptico</option><option>Caminhada</option><option>Corrida</option><option>Outro</option></select></label>
+    <label>Tempo (min)<input id="cardioTime" type="number" min="0" step="1" inputmode="numeric"></label>
+    <label>Distância (km)<input id="cardioDistance" type="number" min="0" step="0.01" inputmode="decimal"></label>
+    <label>Calorias<input id="cardioCalories" type="number" min="0" step="1" inputmode="numeric"></label>
+    <label>Velocidade média<input id="cardioSpeed" type="number" min="0" step="0.1" inputmode="decimal"></label>
+    <label>FC média<input id="cardioHR" type="number" min="0" step="1" inputmode="numeric"></label>
+  </div><label>Observações<textarea id="cardioNotes" rows="2"></textarea></label></section>
+  <label class="card notes-card">Observações do treino<textarea id="workoutNotes" rows="3"></textarea></label>
+</section>
+
+<section id="historyView" class="view"><div class="page-head"><h1>Histórico</h1></div><div id="historyList"></div><div class="section-title">Histórico por exercício</div><select id="exerciseHistorySelect"></select><div id="exerciseHistory"></div></section>
+
+<section id="weightView" class="view"><div class="page-head"><h1>Peso</h1></div><div id="weightStats" class="stats"></div><div id="currentBmi" class="stats"></div>
+<div class="card"><div class="section-title">Dados corporais</div><label>Altura (m)<input id="heightInput" type="number" min="0.5" max="2.5" step="0.01" inputmode="decimal" placeholder="Ex.: 1,75"></label><button id="saveHeightBtn" class="primary">Salvar altura</button></div>
+<div class="card"><div class="section-title">Novo registro</div><div class="form-grid"><label>Peso (kg)<input id="weightInput" type="number" min="0" step="0.1" inputmode="decimal"></label><label>Data<input id="weightDate" type="date"></label><label>Horário<input id="weightTime" type="time"></label></div><label>Observação<textarea id="weightNotes" rows="2"></textarea></label><button id="addWeightBtn" class="primary">Salvar peso</button></div>
+<div class="card chart-card"><canvas id="weightChart" height="220"></canvas></div><div id="weightList"></div></section>
+
+<section id="exerciseView" class="view"><div class="page-head"><h1>📚 Banco de Exercícios</h1><button id="addExerciseBtn">+ Novo</button></div>
+<div class="card"><div class="form-grid"><input id="exerciseSearch" placeholder="Pesquisar exercício"><select id="exerciseFilter"><option value="">Todos os grupos</option><option>Peito</option><option>Costas</option><option>Ombros</option><option>Bíceps</option><option>Tríceps</option><option>Quadríceps</option><option>Posterior de coxa</option><option>Glúteos</option><option>Panturrilhas</option><option>Abdômen</option><option>Corpo inteiro</option></select></div></div>
+<div id="exerciseList"></div></section>
+
+<section id="photosView" class="view"><div class="page-head"><h1>Fotos</h1></div><div class="card"><div class="section-title">Nova foto de evolução</div><input id="photoFile" type="file" accept="image/*" capture="environment"><div class="form-grid"><label>Data<input id="photoDate" type="date"></label><label>Tipo<select id="photoType"><option>Frente</option><option>Lado</option><option>Costas</option><option>Outro</option></select></label></div><label>Observação<textarea id="photoNotes" rows="2"></textarea></label><button id="addPhotoBtn" class="primary">Salvar foto</button></div><div id="photoGallery" class="photo-grid"></div></section>
+
+<section id="evolutionView" class="view"><div class="page-head"><h1>Evolução</h1></div><div id="evolutionStats" class="stats stats-wide"></div><div class="card chart-card"><div class="section-title">Peso</div><canvas id="evolutionWeightChart" height="220"></canvas></div><div class="card chart-card"><div class="section-title">Volume por treino</div><canvas id="volumeChart" height="220"></canvas></div><div id="exerciseProgress" class="card"></div></section>
+
+<section id="calendarView" class="view"><div class="page-head"><h1>Calendário</h1></div><div class="calendar-controls"><button id="prevMonth">‹</button><strong id="calendarMonth"></strong><button id="nextMonth">›</button></div><div id="calendarGrid" class="calendar-grid"></div><div id="calendarDetails"></div></section>
+
+<section id="aiView" class="view"><div class="page-head"><h1>🤖 Pergunte à IA</h1></div><div class="quick-grid ai-shortcuts"><button data-ai="Exercícios">🏋️ Exercícios</button><button data-ai="Substituir exercício">🔄 Substituir exercício</button><button data-ai="Músculos trabalhados">💪 Músculos trabalhados</button><button data-ai="Como executar">📖 Como executar</button><button data-ai="Meu treino">📊 Meu treino</button></div><div id="aiMessages" class="chat"></div><form id="aiForm" class="chat-form"><input id="aiInput" placeholder="Pergunte sobre treino ou exercício..." autocomplete="off"><button class="primary">Enviar</button></form></section>
+
+<section id="smartView" class="view"><div class="page-head"><h1>✨ Treino Inteligente</h1></div>
+<div class="card smart-form">
+<label>Grupos musculares<select id="smartGroups" multiple size="5"><option>Peito</option><option>Costas</option><option>Ombros</option><option>Bíceps</option><option>Tríceps</option><option>Quadríceps</option><option>Posterior de coxa</option><option>Glúteos</option><option>Panturrilhas</option><option>Abdômen</option><option>Corpo inteiro</option></select></label>
+<div class="form-grid"><label>Objetivo<select id="smartGoal"><option>Hipertrofia</option><option>Força</option><option>Resistência muscular</option><option>Manutenção</option><option>Variar o treino</option></select></label><label>Tempo<select id="smartTime"><option value="20">20 minutos</option><option value="30">30 minutos</option><option value="45" selected>45 minutos</option><option value="60">60 minutos</option><option value="custom">Personalizado</option></select></label></div>
+<label id="smartCustomTimeWrap" class="hidden">Tempo personalizado (min)<input id="smartCustomTime" type="number" min="10" max="180" value="45"></label>
+<label>Equipamentos<select id="smartEquipment" multiple size="4"><option>Academia completa</option><option>Máquinas</option><option>Halteres</option><option>Barras</option><option>Polias</option><option>Peso corporal</option></select></label>
+<label>Nível<select id="smartLevel"><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select></label>
+<label class="switch"><input id="smartVariety" type="checkbox"><span>Quero exercícios diferentes dos meus últimos treinos</span></label>
+<label>Exercícios a evitar<input id="smartAvoid" placeholder="Ex.: agachamento, supino..."></label>
+<button id="generateSmartBtn" class="primary big-btn">🤖 GERAR TREINO</button></div>
+<div id="smartResult"></div></section>
+
+<section id="settingsView" class="view"><div class="page-head"><h1>Configurações</h1></div>
+<div class="card"><div class="section-title">Conta</div><div id="accountInfo" class="muted"></div><button id="logoutBtn" class="danger">Sair da conta</button></div>
+<div class="card"><div class="section-title">Cronômetro</div><label>Descanso padrão (segundos)<input id="defaultRest" type="number" min="5" max="600" step="1" value="40" inputmode="numeric"><div class="muted small">40 segundos é o padrão inicial. Você pode definir outro tempo entre 5 e 600 segundos.</div></label><label class="switch"><input id="soundEnabled" type="checkbox"><span>🔊 Apito ao terminar</span></label><label class="switch"><input id="autoStartRest" type="checkbox"><span>Iniciar descanso automaticamente</span></label></div>
+<div class="card"><div class="section-title">Aparência</div><select id="themeSelect"><option value="auto">⚙️ Automático</option><option value="light">☀️ Claro</option><option value="dark">🌙 Escuro</option></select></div>
+<div class="card"><div class="section-title">Backup</div><p class="muted">Backup independente da nuvem. Inclui dados locais e metadados das fotos.</p><div class="actions"><button id="exportBackup" class="primary">⬇️ Exportar backup</button><button id="importBackup">⬆️ Importar backup</button><input id="backupFile" type="file" accept="application/json" hidden></div></div>
+<div class="card"><div class="section-title">Dados</div><button id="syncBtn">☁️ Sincronizar agora</button><button id="trashBtn">🗑️ Lixeira</button><button id="auditBtn">🧾 Histórico de alterações</button><button id="clearLocalBtn">Limpar dados deste dispositivo</button></div>
+<div id="settingsExtra"></div></section>
 </main>
-<nav class="bottom-nav" id="bottomNav"><button data-view="homeView">⌂<span>Início</span></button><button data-view="workoutView">🏋️<span>Treino</span></button><button data-view="historyView">📚<span>Histórico</span></button><button data-view="weightView">⚖️<span>Peso</span></button><button data-view="evolutionView">📈<span>Evolução</span></button><button data-view="calendarView">📅<span>Calendário</span></button></nav>
+<nav class="bottom-nav" id="bottomNav"><button data-view="homeView">⌂<span>Início</span></button><button data-view="workoutView">🏋️<span>Treino</span></button><button data-view="historyView">📚<span>Histórico</span></button><button data-view="weightView">⚖️<span>Peso</span></button><button data-view="exerciseView">📚<span>Exercícios</span></button><button data-view="settingsView">⚙️<span>Config.</span></button></nav>
+</div>
+
+<div id="modalRoot"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const CACHE="meu-treino-v5";
+const CACHE="meu-treino-v6";
 const ASSETS=[
  "./","./index.html","./manifest.json","./icon-180.png","./icon-512.png",
  "./css/app.css","./js/app.js",

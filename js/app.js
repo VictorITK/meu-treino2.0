@@ -1,5 +1,8 @@
-const DB_NAME="meuTreinoDB", DB_VERSION=2, DATA_KEY="appState", OUTBOX_KEY="outbox";
+const DB_NAME="meuTreinoDB", DB_VERSION=3, DATA_KEY="appState", OUTBOX_KEY="outbox";
 const REST_SECONDS=40;
+const APP_VERSION=8;
+const PLACEHOLDER_EXERCISE_IMAGE="data:image/svg+xml;charset=UTF-8,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450"><rect width="800" height="450" fill="#111827"/><g fill="white"><circle cx="280" cy="225" r="54"/><circle cx="520" cy="225" r="54"/><rect x="325" y="210" width="150" height="30" rx="15"/></g><text x="400" y="335" fill="#9ca3af" font-family="Arial" font-size="26" text-anchor="middle">Imagem do exercício</text></svg>`);
+const EXERCISE_GROUPS=["Peito","Costas","Ombros","Bíceps","Tríceps","Quadríceps","Posterior de coxa","Glúteos","Adutores","Panturrilhas","Abdômen","Corpo inteiro"];
 const DEFAULTS={A:[
 {name:"Supino na máquina",group:"Peito",muscles:"Peitoral, tríceps, deltoide anterior",equipment:"Máquinas",sets:3,min:8,max:12,rir:2,rest:40},
 {name:"Puxada frontal",group:"Costas",muscles:"Dorsais, bíceps",equipment:"Máquinas",sets:3,min:8,max:12,rir:2,rest:40},
@@ -18,7 +21,7 @@ const DEFAULTS={A:[
 {name:"Panturrilha na máquina ou no leg press",group:"Panturrilhas",muscles:"Gastrocnêmio, sóleo",equipment:"Máquinas",sets:3,min:10,max:15,rir:2,rest:40},
 {name:"Abdominal na máquina OU Pallof Press",group:"Abdômen",muscles:"Core",equipment:"Máquinas",sets:2,min:10,max:15,rir:2,rest:40}
 ]};
-let state={version:7,workout:"A",workouts:{A:[],B:[]},exercises:structuredClone(DEFAULTS),sessions:[],weights:[],photos:[],profile:{height:null,name:""},settings:{defaultRest:40,soundEnabled:true,autoStartRest:true,theme:"auto"},nextWorkout:"A",trash:[],audit:[],ai:[]};
+let state={version:APP_VERSION,workout:"A",workouts:{A:[],B:[]},exercises:structuredClone(DEFAULTS),exerciseBank:[],sessions:[],weights:[],photos:[],profile:{height:null,name:""},settings:{defaultRest:40,soundEnabled:true,autoStartRest:true,theme:"auto",rememberAccount:true},nextWorkout:"A",trash:[],audit:[],ai:[]};
 let timer={remaining:40,id:null,running:false}, audioCtx=null,timerCycle=0,calendarDate=new Date(), currentUser=null, online=navigator.onLine;
 const $=id=>document.getElementById(id);
 const uid=()=>crypto.randomUUID?.()||Date.now()+"-"+Math.random();
@@ -40,18 +43,94 @@ async function photoPut(p){const db=await openDB();return new Promise((res,rej)=
 async function photoAll(){const db=await openDB();return new Promise((res,rej)=>{const r=db.transaction("photos","readonly").objectStore("photos").getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error)})}
 async function photoDelete(id){const db=await openDB();return new Promise((res,rej)=>{const r=db.transaction("photos","readwrite").objectStore("photos").delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
 
+
+function normalizeExerciseRow(e){
+  return {
+    id:e.id||uid(), name:e.name, slug:e.slug||slugify(e.name), group:e.group_name||e.group||"Corpo inteiro",
+    muscles:e.muscles||"", secondary_muscles:e.secondary_muscles||"", movement_type:e.movement_type||"",
+    equipment:e.equipment||"", difficulty:e.difficulty||"Iniciante", exercise_type:e.exercise_type||"Musculação",
+    description:e.description||"", instructions:e.instructions||"", image_url:e.image_url||"",
+    video_url:e.video_url||"", active:e.active!==false, sets:Number(e.sets)||3, min:Number(e.min_reps??e.min)||8,
+    max:Number(e.max_reps??e.max)||12, rir:Number.isFinite(Number(e.rir))?Number(e.rir):2,
+    rest:Number(e.rest_seconds??e.rest)||getRestSeconds(), custom:!e.is_official && !!e.user_id, is_official:!!e.is_official
+  };
+}
+function slugify(v){return String(v||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");}
+function exerciseImage(e){return e.image_url||e.imageUrl||PLACEHOLDER_EXERCISE_IMAGE;}
+function localExerciseBank(){return allExercises().map(normalizeExerciseRow);}
+async function loadExerciseBank(){
+  if(!sb){state.exerciseBank=localExerciseBank();return state.exerciseBank}
+  try{
+    const [officialRes,customRes]=await Promise.all([
+      sb.from("exercises").select("*").eq("is_official",true).eq("active",true).order("group_name").order("name"),
+      currentUser?sb.from("exercises").select("*").eq("user_id",currentUser.id).eq("active",true).order("name"):Promise.resolve({data:[],error:null})
+    ]);
+    if(officialRes.error)throw officialRes.error;
+    if(customRes.error)throw customRes.error;
+    state.exerciseBank=[...(officialRes.data||[]),...(customRes.data||[])].map(normalizeExerciseRow);
+    await dbSet(DATA_KEY,state);
+    return state.exerciseBank;
+  }catch(e){
+    console.warn("Banco remoto indisponível",e);
+    state.exerciseBank=state.exerciseBank.length?state.exerciseBank:localExerciseBank();
+    return state.exerciseBank;
+  }
+}
+async function fetchGeneratorPool(){
+  if(!sb||!currentUser||!online)return state.exerciseBank.length?state.exerciseBank:localExerciseBank();
+  const [officialRes,customRes]=await Promise.all([
+    sb.from("exercises").select("*").eq("is_official",true).eq("active",true),
+    sb.from("exercises").select("*").eq("user_id",currentUser.id).eq("active",true)
+  ]);
+  if(officialRes.error)throw officialRes.error;
+  if(customRes.error)throw customRes.error;
+  const bank=[...(officialRes.data||[]),...(customRes.data||[])].map(normalizeExerciseRow);
+  state.exerciseBank=bank;
+  return bank;
+}
+async function insertCustomExerciseToSupabase(e){
+  if(!sb||!currentUser)return e;
+  const payload={id:e.id,name:e.name,slug:slugify(e.name),description:e.description||null,muscle_group:e.group,secondary_muscles:e.secondary_muscles||null,movement_type:e.movement_type||null,equipment:e.equipment||null,difficulty:e.difficulty||"Iniciante",exercise_type:e.exercise_type||"Musculação",instructions:e.instructions||null,image_url:e.image_url||null,video_url:e.video_url||null,active:true,user_id:currentUser.id};
+  const {data,error}=await sb.from("exercises").insert(payload).select("*").single();
+  if(error)throw error;
+  return normalizeExerciseRow(data);
+}
+function selectedLabels(id){return selectedValues(id);}
+function setSelectValue(id,value){
+  const el=$(id); if(!el)return;
+  if(el.multiple){const vals=new Set(Array.isArray(value)?value:[]);[...el.options].forEach(o=>o.selected=vals.has(o.value))}
+  else el.value=value;
+}
+function renderChoiceChips(){
+  ["smartGroups","smartGoal","smartTime","smartEquipment","smartLevel"].forEach(id=>{
+    const select=$(id),wrap=document.querySelector(`[data-choice-container="${id}"]`); if(!select||!wrap)return;
+    wrap.innerHTML=[...select.options].map(o=>`<button type="button" class="choice-chip ${o.selected?"selected":""}" data-choice="${esc(o.value)}">${esc(o.textContent)}</button>`).join("");
+    wrap.querySelectorAll("[data-choice]").forEach(btn=>btn.onclick=()=>{
+      const val=btn.dataset.choice;
+      if(select.multiple){
+        const opt=[...select.options].find(o=>o.value===val); if(opt)opt.selected=!opt.selected;
+      }else select.value=val;
+      btn.classList.toggle("selected",select.multiple?[...select.selectedOptions].some(o=>o.value===val):select.value===val);
+      if(id==="smartTime")$("smartCustomTimeWrap").classList.toggle("hidden",select.value!=="custom");
+    });
+  });
+}
+function setSmartStatus(msg,type=""){
+  const el=$("smartStatus");el.textContent=msg;el.classList.toggle("hidden",!msg);el.classList.toggle("error",type==="error");
+}
+function clearSmartStatus(){setSmartStatus("")}
 function sanitizeState(){
- state.settings=Object.assign({defaultRest:40,soundEnabled:true,autoStartRest:true,theme:"auto"},state.settings||{});
+ state.settings=Object.assign({defaultRest:40,soundEnabled:true,autoStartRest:true,theme:"auto",rememberAccount:true},state.settings||{});
  const r=Number(state.settings.defaultRest);state.settings.defaultRest=Number.isFinite(r)&&r>=5&&r<=600?Math.round(r):40;
  state.profile=Object.assign({height:null,name:""},state.profile||{});
  state.sessions=Array.isArray(state.sessions)?state.sessions:[];
  state.weights=Array.isArray(state.weights)?state.weights:[];
  state.photos=Array.isArray(state.photos)?state.photos:[];
  state.trash=Array.isArray(state.trash)?state.trash:[];state.audit=Array.isArray(state.audit)?state.audit:[];state.ai=Array.isArray(state.ai)?state.ai:[];
- state.exercises=state.exercises||structuredClone(DEFAULTS);
+ state.exercises=state.exercises||structuredClone(DEFAULTS); state.exerciseBank=Array.isArray(state.exerciseBank)?state.exerciseBank:[];
  for(const w of ["A","B"]) state.exercises[w]=(state.exercises[w]||[]).map(e=>({...e,rest:(Number.isFinite(Number(e.rest))&&Number(e.rest)>=5?Math.round(Number(e.rest)):getRestSeconds()),custom:!!e.custom,favorite:!!e.favorite}));
 }
-async function save(){sanitizeState();state.version=7;await dbSet(DATA_KEY,state);await dbSet(OUTBOX_KEY,{pending:true,at:new Date().toISOString()});if(online&&currentUser)syncNow().catch(console.warn)}
+async function save(){sanitizeState();state.version=APP_VERSION;await dbSet(DATA_KEY,state);await dbSet(OUTBOX_KEY,{pending:true,at:new Date().toISOString()});if(online&&currentUser)syncNow().catch(console.warn)}
 async function loadState(){
  const saved=await dbGet(DATA_KEY);
  if(saved){state=Object.assign(state,saved);sanitizeState()}
@@ -66,7 +145,7 @@ async function initSupabase(){
  const c=window.MEU_TREINO_CONFIG||{};
  if(!c.SUPABASE_URL||c.SUPABASE_URL.includes("SEU-PROJETO")) return null;
  if(!window.supabase)return null;
- return window.supabase.createClient(c.SUPABASE_URL,c.SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+ return window.supabase.createClient(c.SUPABASE_URL,c.SUPABASE_PUBLISHABLE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:"pkce",experimental:{passkey:true}}});
 }
 let sb=null;
 async function syncNow(){
@@ -74,7 +153,7 @@ async function syncNow(){
  const payload=snapshot();
  const {error}=await sb.from("user_snapshots").upsert({user_id:currentUser.id,data:payload,updated_at:new Date().toISOString()},{onConflict:"user_id"});
  if(error){console.warn(error);toast("Falha na sincronização; os dados locais foram preservados.");return}
- await dbSet(OUTBOX_KEY,{pending:false,at:new Date().toISOString()});
+ state.syncUpdatedAt=new Date().toISOString();await dbSet(DATA_KEY,state);await dbSet(OUTBOX_KEY,{pending:false,at:state.syncUpdatedAt});
  toast("☁️ Sincronizado");
 }
 async function pullRemote(){
@@ -102,9 +181,53 @@ async function afterLogin(){
 }
 function showLoggedOut(){$("authView").classList.remove("hidden");$("appShell").classList.add("hidden")}
 async function signup(e){e.preventDefault();if(!sb)return toast("Configure o Supabase em js/config.js.");const name=$("signupName").value.trim(),email=$("signupEmail").value.trim(),p=$("signupPassword").value,p2=$("signupPassword2").value;if(p!==p2)return toast("As senhas não conferem.");const {error}=await sb.auth.signUp({email,password:p,options:{data:{name},emailRedirectTo:location.href}});if(error)return toast(error.message);state.profile.name=name;await save();toast("Conta criada. Verifique o e-mail se a confirmação estiver ativa.")}
-async function login(e){e.preventDefault();if(!sb)return toast("Configure o Supabase em js/config.js.");const {error}=await sb.auth.signInWithPassword({email:$("loginEmail").value.trim(),password:$("loginPassword").value});if(error)toast(error.message)}
+async function login(e){
+  e.preventDefault();if(!sb)return toast("Configure o Supabase em js/config.js.");
+  const remember=$("rememberAccount")?.checked!==false;
+  localStorage.setItem("meuTreinoRemember",String(remember));state.settings.rememberAccount=remember;
+  const {error}=await sb.auth.signInWithPassword({email:$("loginEmail").value.trim(),password:$("loginPassword").value});
+  if(error)toast(error.message);else await dbSet(DATA_KEY,state);
+}
 async function forgot(){if(!sb)return toast("Configure o Supabase.");const email=prompt("Digite seu e-mail:");if(!email)return;const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.href});toast(error?error.message:"Link de recuperação enviado.")}
 async function logout(){if(sb)await sb.auth.signOut()}
+async function loginWithPasskey(){
+  if(!sb)return toast("Configure o Supabase em js/config.js.");
+  if(!sb.auth.signInWithPasskey)return toast("Atualize o Supabase e habilite Passkeys no projeto.");
+  try{
+    const {data,error}=await sb.auth.signInWithPasskey();
+    if(error)throw error;
+    currentUser=data?.user||currentUser;toast("🔐 Login por biometria realizado.");
+  }catch(e){
+    console.error(e);
+    toast(e?.message||"Não foi possível entrar com Face ID/biometria.");
+  }
+}
+async function registerPasskey(){
+  if(!sb||!currentUser)return toast("Faça login primeiro.");
+  if(!sb.auth.registerPasskey)return toast("A versão do Supabase usada pelo app não oferece Passkeys.");
+  try{
+    const {data,error}=await sb.auth.registerPasskey();
+    if(error)throw error;
+    toast(`🔐 Passkey ativada${data?.friendly_name?": "+data.friendly_name:""}.`);
+    renderSettings();
+  }catch(e){console.error(e);toast(e?.message||"Não foi possível ativar a biometria.")}
+}
+async function renderPasskeys(){
+  const box=$("passkeySettings");if(!box)return;
+  if(!currentUser){box.innerHTML="";return}
+  if(!sb?.auth?.passkey?.list){box.innerHTML=`<div><b>🔐 Face ID / biometria</b><div class="muted small">Disponível após habilitar Passkeys no Supabase.</div></div>`;return}
+  try{
+    const {data,error}=await sb.auth.passkey.list();
+    if(error)throw error;
+    const items=(data||[]).map(p=>`<div class="passkey-item"><span>🔐 ${esc(p.friendly_name||"Passkey")}<small class="muted"> · ${dateBR((p.created_at||"").slice(0,10))}</small></span></div>`).join("");
+    box.innerHTML=`<div><b>🔐 Login com Face ID / biometria</b><div class="muted small">A biometria é processada pelo dispositivo. O app não recebe nem armazena sua biometria.</div>${items?`<div class="passkey-list">${items}</div>`:""}<button id="registerPasskeyBtn" type="button" class="passkey-btn">${items?"➕ Adicionar outra biometria":"🔐 Ativar login com Face ID / biometria"}</button></div>`;
+    $("registerPasskeyBtn").onclick=registerPasskey;
+  }catch(e){
+    console.warn(e);box.innerHTML=`<div><b>🔐 Face ID / biometria</b><div class="muted small">Não foi possível consultar as passkeys agora.</div><button id="registerPasskeyBtn" type="button" class="passkey-btn">🔐 Ativar login com Face ID / biometria</button></div>`;
+    $("registerPasskeyBtn").onclick=registerPasskey;
+  }
+}
+
 
 function checkLocalImportOffer(){dbGet(DATA_KEY).then(local=>{if(!local||!currentUser)return;const meaningful=(local.sessions?.length||local.weights?.length||local.photos?.length||local.profile?.height);if(meaningful&&!local.migratedToAccount){modal("Dados encontrados neste dispositivo",`<p>Encontramos dados salvos neste dispositivo. Deseja importar esses dados para sua conta?</p><p class="muted small">Os dados locais não serão apagados antes da confirmação de sincronização.</p>`,`<div class="actions"><button onclick="closeModal()">Agora não</button><button class="primary" onclick="importLocalToAccount()">Importar dados</button></div>`)}})}
 window.importLocalToAccount=async()=>{closeModal();if(!currentUser)return;await syncNow();state.migratedToAccount=true;await save();toast("Dados locais associados à sua conta.")}
@@ -131,15 +254,44 @@ async function addWeight(){const w=+$("weightInput").value;if(!w)return toast("I
 async function saveHeight(){const h=Number(String($("heightInput").value).replace(",","."));if(!h||h<0.5||h>2.5)return toast("Informe uma altura válida.");state.profile.height=h;audit("UPDATE","profile","profile",null,{height:h});await save();renderWeight();toast("Altura salva.")}
 function drawChart(canvas,data){if(!canvas)return;const c=canvas.getContext("2d"),dpr=devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;c.width=w*dpr;c.height=h*dpr;c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);if(!data.length){c.fillStyle="#6b7280";c.fillText("Sem dados",15,30);return}const pad=28,vals=data.map(x=>x.value),min=Math.min(...vals),max=Math.max(...vals),range=max-min||1;c.strokeStyle=getComputedStyle(document.body).getPropertyValue("--border");c.beginPath();c.moveTo(pad,10);c.lineTo(pad,h-pad);c.lineTo(w-10,h-pad);c.stroke();c.strokeStyle="#4f46e5";c.lineWidth=3;c.beginPath();data.forEach((x,i)=>{const px=pad+(w-pad-15)*(i/Math.max(1,data.length-1)),py=10+(max-x.value)/range*(h-pad-20);i?c.lineTo(px,py):c.moveTo(px,py)});c.stroke()}
 
+
 function allExercises(){return [...state.exercises.A.map((e,i)=>({...e,workout:"A",idx:i})),...state.exercises.B.map((e,i)=>({...e,workout:"B",idx:i}))]}
-function renderExercises(){const q=$("exerciseSearch").value.toLowerCase(),g=$("exerciseFilter").value;const arr=allExercises().filter(e=>(!q||e.name.toLowerCase().includes(q)||String(e.muscles).toLowerCase().includes(q))&&(!g||e.group===g));$("exerciseList").innerHTML=arr.map(e=>`<article class="exercise-card"><div class="exercise-head"><div><strong>${esc(e.name)}</strong><div class="exercise-meta"><span class="pill">${esc(e.group)}</span><span class="pill">${esc(e.equipment)}</span>${e.custom?'<span class="pill">Personalizado</span>':'<span class="pill">Oficial</span>'}</div><div class="muted">${esc(e.muscles||"")} · ${e.sets}×${e.min}-${e.max} · RIR ${e.rir??"—"}</div></div><button data-open-ex="${e.workout}:${e.idx}">Abrir</button></div></article>`).join("")||'<div class="card muted">Nenhum exercício encontrado.</div>';$("exerciseList").querySelectorAll("[data-open-ex]").forEach(b=>{const [w,i]=b.dataset.openEx.split(":");b.onclick=()=>openExercise(+i,w)})}
-function openExercise(i,w=state.workout){const e=state.exercises[w][i];if(!e)return;const video=e.video_id?`<div class="video-box"><iframe src="https://www.youtube.com/embed/${encodeURIComponent(e.video_id)}" title="Execução de ${esc(e.name)}" allowfullscreen></iframe><div class="video-actions"><a href="${esc(e.youtube_url||"https://www.youtube.com/watch?v="+e.video_id)}" target="_blank" rel="noopener"><button>Assistir no YouTube</button></a><button onclick="chooseVideo('${w}',${i})">🔄 Trocar vídeo</button></div></div>`:`<div class="card"><div class="muted">Nenhum vídeo cadastrado.</div><button onclick="chooseVideo('${w}',${i})">🔎 Buscar no YouTube</button></div>`;modal(esc(e.name),`<p><b>Grupo:</b> ${esc(e.group)}</p><p><b>Músculos:</b> ${esc(e.muscles||"")}</p><p><b>Equipamento:</b> ${esc(e.equipment||"")}</p><p>${esc(e.description||"")}</p><p>${esc(e.instructions||"")}</p>${video}<div class="actions"><button onclick="editExerciseFull('${w}',${i})">✏️ Editar</button>${e.custom?`<button class="danger" onclick="deleteExercise('${w}',${i})">Excluir</button>`:""}</div>`)}
-async function addExercise(){const name=prompt("Nome do exercício:");if(!name)return;const group=prompt("Grupo muscular:","Corpo inteiro")||"Corpo inteiro",equipment=prompt("Equipamento:","Máquinas")||"Máquinas";const e={id:uid(),name,group,equipment,muscles:"",description:"",instructions:"",sets:3,min:10,max:12,rir:2,rest:getRestSeconds(),custom:true,favorite:false};state.exercises[state.workout].push(e);audit("CREATE","exercise",e.id,null,e);await save();renderExercises();renderWorkout()}
+function renderExercises(){
+  const q=($("exerciseSearch").value||"").toLowerCase(),g=$("exerciseFilter").value;
+  const source=state.exerciseBank.length?state.exerciseBank:localExerciseBank();
+  const arr=source.filter(e=>(!q||e.name.toLowerCase().includes(q)||String(e.muscles).toLowerCase().includes(q)||String(e.secondary_muscles).toLowerCase().includes(q))&&(!g||e.group===g));
+  $("exerciseList").innerHTML=arr.map(e=>`<article class="exercise-card">
+    <img class="exercise-thumb" src="${esc(exerciseImage(e))}" alt="Imagem de ${esc(e.name)}" onerror="this.src=PLACEHOLDER_EXERCISE_IMAGE">
+    <div class="exercise-head"><div><strong>${esc(e.name)}</strong><div class="exercise-meta"><span class="pill">${esc(e.group)}</span><span class="pill">${esc(e.equipment||"")}</span>${e.is_official?'<span class="pill">Oficial</span>':'<span class="pill">Personalizado</span>'}</div>
+    <div class="muted">${esc(e.muscles||"")} · ${esc(e.movement_type||"")} · ${esc(e.difficulty||"")}</div></div>
+    <button data-open-bank-ex="${esc(e.id)}">Abrir</button></div>
+  </article>`).join("")||'<div class="empty-state">Nenhum exercício encontrado.</div>';
+  $("exerciseList").querySelectorAll("[data-open-bank-ex]").forEach(b=>b.onclick=()=>openBankExercise(b.dataset.openBankEx));
+}
+function openBankExercise(id){
+  const e=state.exerciseBank.find(x=>String(x.id)===String(id));if(!e)return;
+  const video=e.video_url?`<div class="video-box"><a target="_blank" rel="noopener" href="${esc(e.video_url)}"><button>🎥 Abrir vídeo</button></a></div>`:"";
+  modal(esc(e.name),`<img class="exercise-thumb" src="${esc(exerciseImage(e))}" alt="Imagem de ${esc(e.name)}" onerror="this.src=PLACEHOLDER_EXERCISE_IMAGE"><p><b>Grupo:</b> ${esc(e.group)}</p><p><b>Músculos:</b> ${esc(e.muscles||"")}</p><p><b>Equipamento:</b> ${esc(e.equipment||"")}</p><p><b>Dificuldade:</b> ${esc(e.difficulty||"")}</p><p>${esc(e.description||"")}</p><p>${esc(e.instructions||"")}</p>${video}`);
+}
+function openExercise(i,w=state.workout){
+  const e=state.exercises[w][i];if(!e)return;
+  const video=e.video_id?`<div class="video-box"><iframe src="https://www.youtube.com/embed/${encodeURIComponent(e.video_id)}" title="Execução de ${esc(e.name)}" allowfullscreen></iframe><div class="video-actions"><a href="${esc(e.youtube_url||"https://www.youtube.com/watch?v="+e.video_id)}" target="_blank" rel="noopener"><button>Assistir no YouTube</button></a><button onclick="chooseVideo('${w}',${i})">🔄 Trocar vídeo</button></div></div>`:`<div class="card"><div class="muted">Nenhum vídeo cadastrado.</div><button onclick="chooseVideo('${w}',${i})">🔎 Buscar no YouTube</button></div>`;
+  modal(esc(e.name),`<img class="exercise-thumb" src="${esc(exerciseImage(e))}" alt="Imagem de ${esc(e.name)}" onerror="this.src=PLACEHOLDER_EXERCISE_IMAGE"><p><b>Grupo:</b> ${esc(e.group)}</p><p><b>Músculos:</b> ${esc(e.muscles||"")}</p><p><b>Equipamento:</b> ${esc(e.equipment||"")}</p><p>${esc(e.description||"")}</p><p>${esc(e.instructions||"")}</p>${video}<div class="actions"><button onclick="editExerciseFull('${w}',${i})">✏️ Editar</button>${e.custom?`<button class="danger" onclick="deleteExercise('${w}',${i})">Excluir</button>`:""}</div>`)
+}
+async function addExercise(){
+  const name=prompt("Nome do exercício:");if(!name)return;
+  const group=prompt("Grupo muscular:","Corpo inteiro")||"Corpo inteiro",equipment=prompt("Equipamento:","Máquinas")||"Máquinas";
+  const e={id:uid(),name,slug:slugify(name),group,equipment,muscles:"",secondary_muscles:"",movement_type:"",difficulty:"Iniciante",exercise_type:"Musculação",description:"",instructions:"",image_url:"",video_url:"",sets:3,min:10,max:12,rir:2,rest:getRestSeconds(),custom:true,is_official:false,active:true};
+  try{
+    const remote=await insertCustomExerciseToSupabase(e);Object.assign(e,remote);
+  }catch(err){console.warn(err);if(sb&&currentUser)return toast("Não foi possível salvar o exercício no Supabase.")}
+  state.exerciseBank.push(normalizeExerciseRow(e));state.exercises[state.workout].push(e);
+  audit("CREATE","exercise",e.id,null,e);await save();renderExercises();renderWorkout();toast("Exercício salvo no banco.");
+}
 function editWorkoutExercise(i){const e=state.exercises[state.workout][i];const sets=Number(prompt("Séries:",e.sets)),min=Number(prompt("Repetições mínimas:",e.min)),max=Number(prompt("Repetições máximas:",e.max)),rir=Number(prompt("RIR padrão:",e.rir??2));if([sets,min,max,rir].some(x=>!Number.isFinite(x)||x<0))return;e.sets=sets;e.min=min;e.max=max;e.rir=rir;save();renderWorkout()}
 function editExerciseFull(w,i){closeModal();const e=state.exercises[w][i];const name=prompt("Nome:",e.name);if(name===null)return;e.name=name;e.group=prompt("Grupo muscular:",e.group)||e.group;e.equipment=prompt("Equipamento:",e.equipment)||e.equipment;e.muscles=prompt("Músculos:",e.muscles)||e.muscles;e.description=prompt("Descrição:",e.description)||e.description;e.instructions=prompt("Instruções:",e.instructions)||e.instructions;e.custom=true;audit("UPDATE","exercise",e.id,null,e);save();renderExercises();renderWorkout()}
-async function deleteExercise(w,i){closeModal();const e=state.exercises[w][i];if(!confirm("Enviar este exercício personalizado para a lixeira?"))return;state.trash.push({id:uid(),type:"exercise",deletedAt:new Date().toISOString(),record:e,workout:w});state.exercises[w].splice(i,1);audit("DELETE","exercise",e.id,e,null);await save();renderExercises();renderWorkout()}
+async function deleteExercise(w,i){closeModal();const e=state.exercises[w][i];if(!confirm("Enviar este exercício personalizado para a lixeira?"))return;state.trash.push({id:uid(),type:"exercise",deletedAt:new Date().toISOString(),record:e,workout:w});state.exercises[w].splice(i,1);state.exerciseBank=state.exerciseBank.filter(x=>x.id!==e.id);audit("DELETE","exercise",e.id,e,null);if(sb&&currentUser)await sb.from("exercises").update({active:false}).eq("id",e.id).eq("user_id",currentUser.id);await save();renderExercises();renderWorkout()}
 window.editExerciseFull=editExerciseFull;window.deleteExercise=deleteExercise;
-
 async function chooseVideo(w,i){const e=state.exercises[w][i];closeModal();const q=prompt("Buscar no YouTube:",`${e.name} execução correta`);if(!q)return;toast("Buscando vídeos...");if(!sb)return toast("Configure o Supabase/Edge Function para busca automática.");const {data,error}=await sb.functions.invoke("youtube-search",{body:{query:q}});if(error||!data?.items?.length)return toast("Nenhum vídeo encontrado.");modal("Escolha um vídeo",data.items.slice(0,3).map((v,n)=>`<div class="exercise-card"><b>${esc(v.title)}</b><div class="muted">${esc(v.channel||"")}</div><img src="${esc(v.thumbnail||"")}" style="width:100%;border-radius:10px;margin-top:7px"><div class="actions"><a target="_blank" rel="noopener" href="${esc(v.url)}"><button>Visualizar</button></a><button class="primary" onclick="useVideo('${w}',${i},${n})">Usar este vídeo</button></div></div>`).join(""),"");window.__videoChoices=data.items;window.useVideo=(ww,ii,n)=>{const v=window.__videoChoices[n];state.exercises[ww][ii].video_id=v.videoId;state.exercises[ww][ii].youtube_url=v.url;state.exercises[ww][ii].video_title=v.title;state.exercises[ww][ii].video_channel=v.channel;state.exercises[ww][ii].video_thumbnail=v.thumbnail;state.exercises[ww][ii].video_status="active";audit("UPDATE","exercise_video",state.exercises[ww][ii].id,null,v);save();closeModal();renderExercises();renderWorkout();toast("Vídeo salvo.")}}
 window.chooseVideo=chooseVideo;
 
@@ -150,7 +302,7 @@ function fileToDataURL(file){return new Promise((res,rej)=>{const r=new FileRead
 function renderEvolution(){const t=totals(),a=state.sessions.filter(s=>s.workout==="A").length,b=state.sessions.filter(s=>s.workout==="B").length;$("evolutionStats").innerHTML=`<div class="stat"><b>${t.sessions}</b><div class="muted">Treinos</div></div><div class="stat"><b>${a}</b><div class="muted">Treinos A</div></div><div class="stat"><b>${b}</b><div class="muted">Treinos B</div></div><div class="stat"><b>${t.sets}</b><div class="muted">Séries</div></div><div class="stat"><b>${t.muscleMin} min</b><div class="muted">Musculação</div></div><div class="stat"><b>${t.cardioMin} min</b><div class="muted">Cardio</div></div>`;drawChart($("evolutionWeightChart"),state.weights.map(x=>({label:x.date,value:+x.weight})));drawChart($("volumeChart"),state.sessions.map(s=>({label:dateBR(s.start),value:s.sets.reduce((a,x)=>a+(+x.weight||0)*(+x.reps||0),0)})));$("exerciseProgress").innerHTML='<div class="section-title">Progressão de carga</div>'+[...new Set(state.sessions.flatMap(s=>s.sets.map(x=>x.exercise)))].map(n=>{const ss=state.sessions.flatMap(s=>s.sets.filter(x=>x.exercise===n)),max=Math.max(...ss.map(x=>+x.weight||0));return `<div class="history-item"><strong>${esc(n)}</strong><div class="muted">Maior carga: ${max} kg · ${ss.length} séries</div></div>`}).join("")}
 function renderCalendar(){const y=calendarDate.getFullYear(),m=calendarDate.getMonth();$("calendarMonth").textContent=new Date(y,m,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});const first=new Date(y,m,1).getDay(),days=new Date(y,m+1,0).getDate();let h=["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map(x=>`<div class="head">${x}</div>`).join("");for(let i=0;i<first;i++)h+="<div></div>";for(let d=1;d<=days;d++){const iso=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`,s=state.sessions.filter(x=>x.start.slice(0,10)===iso);h+=`<div class="${s.length?"trained":""}" data-date="${iso}">${d}${s.length?`<br>✓ ${s.map(x=>x.workout).join("/")}`:""}</div>`}$("calendarGrid").innerHTML=h;$("calendarGrid").querySelectorAll("[data-date]").forEach(x=>x.onclick=()=>{$("calendarDetails").innerHTML=state.sessions.filter(s=>s.start.slice(0,10)===x.dataset.date).map(s=>`<div class="card"><strong>Treino ${s.workout}</strong><div>${dateBR(s.start)} · ${s.durationMin} min · ${s.sets.length} séries</div></div>`).join("")})}
 
-function renderSettings(){$("defaultRest").value=getRestSeconds();$("soundEnabled").checked=state.settings.soundEnabled;$("autoStartRest").checked=state.settings.autoStartRest;$("themeSelect").value=state.settings.theme;$("accountInfo").textContent=currentUser?`${state.profile.name||"Usuário"} · ${currentUser.email}`:"Modo local";$("settingsExtra").innerHTML=`<div class="card"><div class="section-title">Sincronização</div><div class="muted">${online?"🟢 Online":"🔴 Offline"} · ${state.syncUpdatedAt?`última sincronização: ${new Date(state.syncUpdatedAt).toLocaleString("pt-BR")}`:"ainda não sincronizado"}</div></div>`}
+function renderSettings(){$("defaultRest").value=getRestSeconds();$("rememberAccount") && ($("rememberAccount").checked=state.settings.rememberAccount!==false);$("soundEnabled").checked=state.settings.soundEnabled;$("autoStartRest").checked=state.settings.autoStartRest;$("themeSelect").value=state.settings.theme;$("accountInfo").textContent=currentUser?`${state.profile.name||"Usuário"} · ${currentUser.email}`:"Modo local";$("settingsExtra").innerHTML=`<div class="card"><div class="section-title">Sincronização</div><div class="muted">${online?"🟢 Online":"🔴 Offline"} · ${state.syncUpdatedAt?`última sincronização: ${new Date(state.syncUpdatedAt).toLocaleString("pt-BR")}`:"ainda não sincronizado"}</div></div>`}
 function renderAll(){applyTheme();renderDashboard();renderWorkout();renderWeight();renderExercises();renderPhotos();renderEvolution();renderCalendar();renderSettings()}
 function renderTrash(){const arr=state.trash||[];modal("🗑️ Lixeira",arr.length?arr.map(x=>`<div class="history-item"><strong>${esc(x.type)}</strong><div class="muted">${new Date(x.deletedAt).toLocaleString("pt-BR")}</div><div class="actions"><button onclick="restoreTrash('${x.id}')">Restaurar</button><button class="danger" onclick="permanentTrash('${x.id}')">Excluir permanentemente</button></div></div>`).join(""):'<p class="muted">Lixeira vazia.</p>')}
 async function trashRecord(type,id){if(!confirm("Tem certeza que deseja excluir este registro? Ele irá para a Lixeira."))return;let record=null;if(type==="workout_session"){const i=state.sessions.findIndex(x=>x.id===id);if(i<0)return;record=state.sessions.splice(i,1)[0]}else if(type==="weight_record"){const i=state.weights.findIndex(x=>x.id===id);if(i<0)return;record=state.weights.splice(i,1)[0]}else if(type==="photo"){const i=state.photos.findIndex(x=>x.id===id);if(i<0)return;record=state.photos.splice(i,1)[0];await photoDelete(id)}else return;state.trash.push({id:uid(),type,record,deletedAt:new Date().toISOString()});audit("DELETE",type,id,record,null);await save();renderAll();toast("Registro enviado para a Lixeira.")}
@@ -159,12 +311,135 @@ window.restoreTrash=async id=>{const i=state.trash.findIndex(x=>x.id===id);if(i<
 window.permanentTrash=async id=>{const i=state.trash.findIndex(x=>x.id===id);if(i<0)return;if(!confirm("Excluir permanentemente?"))return;const x=state.trash.splice(i,1)[0];audit("PERMANENT_DELETE",x.type,x.record.id,x.record,null);await save();renderTrash();toast("Excluído permanentemente.")};
 function renderAudit(){modal("🧾 Histórico de alterações",(state.audit||[]).map(a=>`<div class="history-item"><strong>${esc(a.action)} · ${esc(a.type)}</strong><div class="muted">${new Date(a.date).toLocaleString("pt-BR")}</div><div class="small">${a.before?esc(JSON.stringify(a.before)):''}${a.after?` → ${esc(JSON.stringify(a.after))}`:''}</div></div>`).join("")||'<p class="muted">Sem alterações registradas.</p>')}
 
-function selectedValues(id){return [...$(id).selectedOptions].map(o=>o.value)}
-function generateSmartLocal(){const groups=selectedValues("smartGroups"),goal=$("smartGoal").value,time=$("smartTime").value==="custom"?+$("smartCustomTime").value:+$("smartTime").value,eq=selectedValues("smartEquipment"),level=$("smartLevel").value,avoid=$("smartAvoid").value.toLowerCase().split(",").map(x=>x.trim()).filter(Boolean),variety=$("smartVariety").checked;let pool=allExercises().filter(e=>(!groups.length||groups.includes(e.group))&&(!eq.length||eq.includes("Academia completa")||eq.includes(e.equipment))&&!avoid.some(a=>e.name.toLowerCase().includes(a)));if(variety){const recent=new Set(state.sessions.slice(-3).flatMap(s=>s.sets.map(x=>x.exercise)));pool.sort((a,b)=>(recent.has(a.name)?1:0)-(recent.has(b.name)?1:0))}const n=Math.max(1,Math.min(pool.length,Math.floor(time/7)));const chosen=pool.slice(0,n).map(e=>({...e,sets:goal==="Força"?3:2+((e.group==="Peito"||e.group==="Costas")?1:0)}));return{name:`Treino Inteligente — ${groups.join(" + ")||"Corpo inteiro"}`,goal,time,level,rest:getRestSeconds(),exercises:chosen,reason:`Seleção baseada no banco disponível, nos grupos escolhidos, no tempo, nível, equipamento e histórico recente.`}}
-function renderSmartResult(r){$("smartResult").innerHTML=`<div class="card"><h2>${esc(r.name)}</h2><div class="muted">${esc(r.goal)} · ${r.time} min · ${esc(r.level)} · descanso ${r.rest}s</div>${r.exercises.map((e,i)=>`<div class="result-exercise"><strong>${i+1}. ${esc(e.name)}</strong><div>${e.sets} × ${e.min}-${e.max} · RIR ${e.rir} · ${r.rest}s</div></div>`).join("")}<p><b>💡 Por que escolhi esses exercícios?</b><br>${esc(r.reason)}</p><div class="actions"><button class="primary" onclick="useSmartWorkout()">✅ Usar este treino</button><button onclick="generateSmart()">🔄 Gerar outra opção</button><button onclick="showView('smartView')">✏️ Ajustar</button><button onclick="document.getElementById('smartResult').innerHTML=''">❌ Cancelar</button></div></div>`;window.__smart=r}
-window.useSmartWorkout=async()=>{const r=window.__smart;if(!r)return;const copy=r.exercises.map(e=>({...e,id:uid(),custom:true}));state.exercises.A=copy;state.workout="A";state.nextWorkout="B";audit("CREATE","ai_generated_workout",uid(),null,r);await save();toast("Treino adicionado como Treino A.");showView("workoutView")};
-function generateSmart(){const r=generateSmartLocal();renderSmartResult(r)}
-async function askAI(prompt){if(!prompt)return;if(!sb){toast("Configure o Supabase para usar a IA.");return}addBubble("user",prompt);addBubble("ai","Pensando...");const context={question:prompt,workout:state.workout,exercises:allExercises().slice(0,80),recentSessions:state.sessions.slice(-5),settings:{defaultRest:getRestSeconds()}};const {data,error}=await sb.functions.invoke("ai-chat",{body:context});const bubbles=[...document.querySelectorAll(".bubble.ai")];if(bubbles.length)bubbles.at(-1).textContent=error?"Não foi possível obter uma resposta agora.":(data?.answer||"Sem resposta.");if(data?.answer){state.ai.push({id:uid(),date:new Date().toISOString(),question:prompt,answer:data.answer});await save()}}
+
+function selectedValues(id){return [...($(id)?.selectedOptions||[])].map(o=>o.value)}
+function estimateExerciseMinutes(e,rest){
+  const sets=Number(e.sets)||3;
+  return sets*1.15+Math.max(0,sets-1)*(rest/60)+0.5;
+}
+function goalPrescription(goal,e){
+  if(goal==="Força")return {sets:3,min:4,max:8,rir:2};
+  if(goal==="Resistência muscular")return {sets:2,min:12,max:20,rir:2};
+  if(goal==="Manutenção")return {sets:2,min:8,max:15,rir:3};
+  if(goal==="Variar o treino")return {sets:2,min:8,max:15,rir:2};
+  return {sets:(e.group==="Peito"||e.group==="Costas")?3:2,min:8,max:12,rir:2};
+}
+function difficultyAllowed(ex,level){
+  const rank={Iniciante:1,Intermediário:2,Avançado:3};
+  return (rank[ex.difficulty]||1)<=(rank[level]||1);
+}
+function buildSmartWorkout(pool,{groups,goal,time,eq,level,avoid,variety}){
+  let candidates=pool.filter(e=>e.active!==false)
+    .filter(e=>!groups.length||groups.includes(e.group))
+    .filter(e=>!eq.length||eq.includes("Academia completa")||eq.includes(e.equipment))
+    .filter(e=>difficultyAllowed(e,level))
+    .filter(e=>!avoid.some(a=>e.name.toLowerCase().includes(a)||String(e.muscles).toLowerCase().includes(a)));
+  if(!candidates.length)return null;
+  const recent=new Set(state.sessions.slice(-3).flatMap(s=>(s.sets||[]).map(x=>x.exercise)));
+  const selected=[],used=new Set(),targetGroups=groups.length?groups.filter(g=>g!=="Corpo inteiro"):["Corpo inteiro"];
+  const score=e=>{
+    let v=0;
+    if(variety&&recent.has(e.name))v-=100;
+    if(e.movement_type==="compound"||/press|supino|remada|puxada|agach|leg press|terra|hip thrust/i.test(e.name))v+=8;
+    if(e.is_official)v+=2;
+    if(targetGroups.includes(e.group))v+=5;
+    return v;
+  };
+  candidates.sort((a,b)=>score(b)-score(a));
+  const prescriptionFor=e=>({...e,...goalPrescription(goal,e),rest:getRestSeconds()});
+  // First guarantee coverage of selected groups when possible.
+  for(const g of targetGroups){
+    const candidate=candidates.find(e=>e.group===g&&!used.has(e.id||e.name));
+    if(candidate){
+      const x=prescriptionFor(candidate),cost=estimateExerciseMinutes(x,x.rest);
+      if(selected.reduce((a,e)=>a+estimateExerciseMinutes(e,e.rest),2)+cost<=time){
+        selected.push(x);used.add(x.id||x.name);
+      }
+    }
+  }
+  // Then fill remaining time, balancing groups and avoiding duplicates.
+  for(const e of candidates){
+    const key=e.id||e.name;if(used.has(key))continue;
+    const x=prescriptionFor(e);
+    const cost=estimateExerciseMinutes(x,x.rest);
+    if(selected.reduce((a,z)=>a+estimateExerciseMinutes(z,z.rest),2)+cost>time)continue;
+    const count=selected.filter(z=>z.group===x.group).length;
+    if(targetGroups.length>1&&count>=3)continue;
+    selected.push(x);used.add(key);
+  }
+  if(!selected.length){
+    const x=prescriptionFor(candidates[0]);selected.push(x);
+  }
+  const estimated=Math.ceil(selected.reduce((a,e)=>a+estimateExerciseMinutes(e,e.rest),2));
+  return {exercises:selected,estimatedMinutes:Math.min(time,estimated)};
+}
+async function generateSmart(){
+  clearSmartStatus();
+  const groups=selectedValues("smartGroups"),goal=$("smartGoal").value;
+  const time=$("smartTime").value==="custom"?Math.max(10,Math.min(180,+$("smartCustomTime").value||45)):+$("smartTime").value;
+  const eq=selectedValues("smartEquipment"),level=$("smartLevel").value;
+  const avoid=$("smartAvoid").value.toLowerCase().split(",").map(x=>x.trim()).filter(Boolean);
+  const variety=$("smartVariety").checked;
+  const btn=$("generateSmartBtn");btn.disabled=true;btn.textContent="⏳ GERANDO TREINO...";
+  setSmartStatus("Buscando exercícios compatíveis no banco...");
+  try{
+    const pool=await fetchGeneratorPool();
+    setSmartStatus("Filtrando exercícios e montando uma sessão que caiba no tempo...");
+    const built=buildSmartWorkout(pool,{groups,goal,time,eq,level,avoid,variety});
+    if(!built){
+      $("smartResult").innerHTML="";setSmartStatus("Não encontramos exercícios compatíveis com esses critérios. Tente alterar os filtros.","error");return;
+    }
+    const r={
+      id:uid(),name:`Treino Inteligente — ${groups.join(" + ")||"Corpo inteiro"}`,goal,time,level,
+      rest:getRestSeconds(),groups,equipment:eq,exercises:built.exercises,
+      estimatedMinutes:built.estimatedMinutes,
+      reason:`O treino foi montado usando o banco de exercícios, filtros selecionados, nível, equipamento, tempo disponível e histórico recente quando solicitado. Exercícios duplicados foram evitados.`
+    };
+    renderSmartResult(r);setSmartStatus("TREINO GERADO");
+  }catch(e){
+    console.error(e);$("smartResult").innerHTML="";setSmartStatus("Não foi possível consultar o banco de exercícios. Verifique a conexão e tente novamente.","error");
+  }finally{
+    btn.disabled=false;btn.textContent="🤖 GERAR TREINO";
+  }
+}
+function renderSmartResult(r){
+  const exerciseHtml=r.exercises.map((e,i)=>{
+    const current=e.current||[];
+    let rows="";
+    for(let s=0;s<e.sets;s++){
+      const d=current[s]||{};
+      rows+=`<div class="set-row smart-set-row" data-e="${i}" data-s="${s}"><b>${s+1}</b><input class="smart-weight" inputmode="decimal" placeholder="kg" value="${esc(d.weight??"")}"><input class="smart-reps" inputmode="numeric" placeholder="${e.min}-${e.max}" value="${esc(d.reps??"")}"><input class="smart-rir" inputmode="numeric" placeholder="${e.rir}" value="${esc(d.rir??e.rir??"")}"><button class="done ${d.done?"completed":""}" type="button">${d.done?"✓":"✓"}</button></div>`;
+    }
+    return `<div class="result-exercise"><img src="${esc(exerciseImage(e))}" alt="Imagem de ${esc(e.name)}" onerror="this.src=PLACEHOLDER_EXERCISE_IMAGE"><div class="result-copy"><strong>${i+1}. ${esc(e.name)}</strong><div class="exercise-meta"><span class="pill">${esc(e.group)}</span><span class="pill">${esc(e.equipment||"")}</span></div><div>${e.sets} séries · ${e.min}-${e.max} reps · RIR ${e.rir} · ${r.rest}s</div></div><div class="smart-preview-sets" style="grid-column:1/-1"><div class="set-head"><span>#</span><span>Carga</span><span>Reps</span><span>RIR</span><span></span></div>${rows}</div></div>`;
+  }).join("");
+  $("smartResult").innerHTML=`<div class="card"><h2>${esc(r.name)}</h2><div class="muted">${esc(r.goal)} · ${r.time} min · ${esc(r.level)} · estimado ${r.estimatedMinutes} min · descanso ${r.rest}s</div>${exerciseHtml}<p><b>💡 Critérios usados</b><br>${esc(r.reason)}</p><div class="actions"><button class="primary" id="useSmartWorkoutBtn">✅ Usar este treino</button><button id="regenerateSmartBtn">🔄 Gerar outra opção</button><button id="adjustSmartBtn">✏️ Ajustar</button><button id="cancelSmartBtn">❌ Cancelar</button></div></div>`;
+  window.__smart=r;
+  $("smartResult").querySelectorAll(".smart-set-row").forEach(row=>{
+    const ei=+row.dataset.e,si=+row.dataset.s,inputs=row.querySelectorAll("input");
+    inputs.forEach((inp,ii)=>inp.onchange=()=>{r.exercises[ei].current=r.exercises[ei].current||[];r.exercises[ei].current[si]=r.exercises[ei].current[si]||{};r.exercises[ei].current[si][["weight","reps","rir"][ii]]=inp.value});
+    row.querySelector(".done").onclick=()=>{const vals=[...inputs].map(x=>x.value);if(!vals[0]||!vals[1])return toast("Informe carga e repetições.");r.exercises[ei].current=r.exercises[ei].current||[];r.exercises[ei].current[si]={weight:vals[0],reps:vals[1],rir:vals[2]||r.exercises[ei].rir,done:true};row.querySelector(".done").classList.add("completed");toast("✓ Série registrada no treino gerado")};
+  });
+  $("useSmartWorkoutBtn").onclick=useSmartWorkout;$("regenerateSmartBtn").onclick=generateSmart;
+  $("adjustSmartBtn").onclick=()=>showView("smartView");$("cancelSmartBtn").onclick=()=>{$("smartResult").innerHTML="";clearSmartStatus()};
+}
+async function useSmartWorkout(){
+  const r=window.__smart;if(!r)return;
+  const copy=r.exercises.map(e=>({...e,id:e.id||uid(),custom:false,rest:r.rest}));
+  state.exercises.A=copy.map(e=>({...e,group:e.group,custom:false}));
+  state.workout="A";state.nextWorkout="B";
+  audit("CREATE","ai_generated_workout",r.id,null,r);
+  if(sb&&currentUser){
+    try{
+      const {data:w,error}=await sb.from("workouts").insert({id:uid(),user_id:currentUser.id,name:r.name,workout_type:"SMART",is_active:true}).select().single();
+      if(error)throw error;
+      const rows=copy.map((e,i)=>({workout_id:w.id,exercise_id:e.id,position:i,sets:e.sets,min_reps:e.min,max_reps:e.max,rir:e.rir,rest_seconds:e.rest}));
+      const ins=await sb.from("workout_exercises").insert(rows);
+      if(ins.error)throw ins.error;
+    }catch(e){console.warn("Não foi possível salvar o treino normalizado; snapshot local será mantido.",e)}
+  }
+  await save();toast("Treino salvo e carregado na área de treino.");showView("workoutView");
+}
+async function askAI(prompt){if(!prompt)return;if(!sb){toast("Configure o Supabase para usar a IA.");return}addBubble("user",prompt);addBubble("ai","Pensando...");const context={question:prompt,workout:state.workout,exercises:(state.exerciseBank.length?state.exerciseBank:allExercises()).slice(0,100),recentSessions:state.sessions.slice(-5),settings:{defaultRest:getRestSeconds()}};const {data,error}=await sb.functions.invoke("ai-chat",{body:context});const bubbles=[...document.querySelectorAll(".bubble.ai")];if(bubbles.length)bubbles.at(-1).textContent=error?"Não foi possível obter uma resposta agora.":(data?.answer||"Sem resposta.");if(data?.answer){state.ai.push({id:uid(),date:new Date().toISOString(),question:prompt,answer:data.answer});await save()}}
 function addBubble(type,text){const el=document.createElement("div");el.className=`bubble ${type}`;el.textContent=text;$("aiMessages").appendChild(el);el.scrollIntoView({behavior:"smooth"})}
 
 function initAudio(){if(!state.settings.soundEnabled)return Promise.resolve(false);try{audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==="suspended")return audioCtx.resume().then(()=>audioCtx.state==="running");return Promise.resolve(audioCtx.state==="running")}catch(e){return Promise.resolve(false)}}
@@ -199,7 +474,7 @@ function wire(){
  $("exportBackup").onclick=exportBackup;$("importBackup").onclick=()=>$("backupFile").click();$("backupFile").onchange=e=>e.target.files[0]&&importBackupFile(e.target.files[0]);$("addExerciseBtn").onclick=addExercise;
  $("exerciseSearch").oninput=renderExercises;$("exerciseFilter").onchange=renderExercises;$("syncBtn").onclick=syncNow;$("trashBtn").onclick=renderTrash;$("auditBtn").onclick=renderAudit;$("clearLocalBtn").onclick=clearLocal;$("logoutBtn").onclick=logout;
  $("loginTab").onclick=()=>{$("loginTab").classList.add("active");$("signupTab").classList.remove("active");$("loginForm").classList.remove("hidden");$("signupForm").classList.add("hidden")};$("signupTab").onclick=()=>{$("signupTab").classList.add("active");$("loginTab").classList.remove("active");$("signupForm").classList.remove("hidden");$("loginForm").classList.add("hidden")};
- $("loginForm").onsubmit=login;$("signupForm").onsubmit=signup;$("forgotPasswordBtn").onclick=forgot;
+ $("loginForm").onsubmit=login;$("signupForm").onsubmit=signup;$("forgotPasswordBtn").onclick=forgot;$("passkeyLoginBtn").onclick=loginWithPasskey;$("rememberAccount").onchange=async e=>{state.settings.rememberAccount=e.target.checked;localStorage.setItem("meuTreinoRemember",String(e.target.checked));await dbSet(DATA_KEY,state)};
  $("aiForm").onsubmit=e=>{e.preventDefault();const q=$("aiInput").value.trim();$("aiInput").value="";askAI(q)};document.querySelectorAll("[data-ai]").forEach(b=>b.onclick=()=>askAI(b.dataset.ai));
  $("smartTime").onchange=()=>{$("smartCustomTimeWrap").classList.toggle("hidden",$("smartTime").value!=="custom")};$("generateSmartBtn").onclick=generateSmart;
  document.querySelectorAll(".bottom-nav button").forEach(b=>b.onclick=()=>showView(b.dataset.view));
@@ -207,4 +482,4 @@ function wire(){
 function renderAIHistory(){if(state.ai?.length)$("aiMessages").innerHTML=state.ai.slice(-10).map(x=>`<div class="bubble user">${esc(x.question)}</div><div class="bubble ai">${esc(x.answer)}</div>`).join("")}
 window.addEventListener("online",()=>{online=true;toast("🟢 Internet reconectada");syncNow().catch(console.warn)});
 window.addEventListener("offline",()=>{online=false;toast("🔴 Offline: dados serão mantidos localmente.")});
-window.addEventListener("DOMContentLoaded",async()=>{await loadState();sanitizeState();wire();setDefaults();timer.remaining=getRestSeconds();timerRender();renderAIHistory();if(/iPhone|iPad|iPod/i.test(navigator.userAgent)&&!navigator.standalone)$("installBox").style.display="block";else $("installBox").style.display="none";navigator.serviceWorker?.register("./sw.js").catch(console.warn);await setupAuth()});
+window.addEventListener("DOMContentLoaded",async()=>{await loadState();sanitizeState();if($("rememberAccount"))$("rememberAccount").checked=state.settings.rememberAccount!==false;wire();setDefaults();timer.remaining=getRestSeconds();timerRender();renderAIHistory();if(/iPhone|iPad|iPod/i.test(navigator.userAgent)&&!navigator.standalone)$("installBox").style.display="block";else $("installBox").style.display="none";navigator.serviceWorker?.register("./sw.js").catch(console.warn);await setupAuth()});

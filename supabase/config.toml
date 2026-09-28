@@ -4,11 +4,11 @@ verify_jwt = true
 [functions.youtube-search]
 verify_jwt = true
 
-# Passkeys / Face ID / Touch ID / Windows Hello.
-# Para produção, substitua os placeholders pelo domínio REAL do PWA.
 [auth.passkey]
 enabled = true
 
+# Substitua pelos dados reais do seu domínio de produção.
+# O rp_id deve ser o domínio sem https:// e sem caminho.
 [auth.webauthn]
 rp_display_name = "Meu Treino"
 rp_id = "SEU-DOMINIO"

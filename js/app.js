@@ -1,6 +1,6 @@
 const DB_NAME="meuTreinoDB", DB_VERSION=3, DATA_KEY="appState", OUTBOX_KEY="outbox";
 const REST_SECONDS=40;
-const APP_VERSION=8;
+const APP_VERSION=10;
 const PLACEHOLDER_EXERCISE_IMAGE="data:image/svg+xml;charset=UTF-8,"+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450"><rect width="800" height="450" fill="#111827"/><g fill="white"><circle cx="280" cy="225" r="54"/><circle cx="520" cy="225" r="54"/><rect x="325" y="210" width="150" height="30" rx="15"/></g><text x="400" y="335" fill="#9ca3af" font-family="Arial" font-size="26" text-anchor="middle">Imagem do exercício</text></svg>`);
 const EXERCISE_GROUPS=["Peito","Costas","Ombros","Bíceps","Tríceps","Quadríceps","Posterior de coxa","Glúteos","Adutores","Panturrilhas","Abdômen","Corpo inteiro"];
 const DEFAULTS={A:[
@@ -23,6 +23,7 @@ const DEFAULTS={A:[
 ]};
 let state={version:APP_VERSION,workout:"A",workouts:{A:[],B:[]},exercises:structuredClone(DEFAULTS),exerciseBank:[],sessions:[],weights:[],photos:[],profile:{height:null,name:""},settings:{defaultRest:40,soundEnabled:true,autoStartRest:true,theme:"auto",rememberAccount:true},nextWorkout:"A",trash:[],audit:[],ai:[]};
 let timer={remaining:40,id:null,running:false}, audioCtx=null,timerCycle=0,calendarDate=new Date(), currentUser=null, online=navigator.onLine;
+let backendStatus={exerciseBank:"unknown",ai:"unknown",youtube:"unknown"};
 const $=id=>document.getElementById(id);
 const uid=()=>crypto.randomUUID?.()||Date.now()+"-"+Math.random();
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
@@ -59,7 +60,7 @@ function slugify(v){return String(v||"").normalize("NFD").replace(/[\\u0300-\\u0
 function exerciseImage(e){return e.image_url||e.imageUrl||PLACEHOLDER_EXERCISE_IMAGE;}
 function localExerciseBank(){return allExercises().map(normalizeExerciseRow);}
 async function loadExerciseBank(){
-  if(!sb){state.exerciseBank=localExerciseBank();return state.exerciseBank}
+  if(!sb){backendStatus.exerciseBank="local";state.exerciseBank=localExerciseBank();return state.exerciseBank}
   try{
     const [officialRes,customRes]=await Promise.all([
       sb.from("exercises").select("*").eq("is_official",true).eq("active",true).order("group_name").order("name"),
@@ -68,10 +69,12 @@ async function loadExerciseBank(){
     if(officialRes.error)throw officialRes.error;
     if(customRes.error)throw customRes.error;
     state.exerciseBank=[...(officialRes.data||[]),...(customRes.data||[])].map(normalizeExerciseRow);
+    backendStatus.exerciseBank=state.exerciseBank.length?"ok":"empty";
     await dbSet(DATA_KEY,state);
     return state.exerciseBank;
   }catch(e){
-    console.warn("Banco remoto indisponível",e);
+    backendStatus.exerciseBank="error";
+    console.error("Banco remoto indisponível:",e);
     state.exerciseBank=state.exerciseBank.length?state.exerciseBank:localExerciseBank();
     return state.exerciseBank;
   }
@@ -86,11 +89,13 @@ async function fetchGeneratorPool(){
   if(customRes.error)throw customRes.error;
   const bank=[...(officialRes.data||[]),...(customRes.data||[])].map(normalizeExerciseRow);
   state.exerciseBank=bank;
+  backendStatus.exerciseBank=bank.length?"ok":"empty";
+  await dbSet(DATA_KEY,state);
   return bank;
 }
 async function insertCustomExerciseToSupabase(e){
   if(!sb||!currentUser)return e;
-  const payload={id:e.id,name:e.name,slug:slugify(e.name),description:e.description||null,muscle_group:e.group,secondary_muscles:e.secondary_muscles||null,movement_type:e.movement_type||null,equipment:e.equipment||null,difficulty:e.difficulty||"Iniciante",exercise_type:e.exercise_type||"Musculação",instructions:e.instructions||null,image_url:e.image_url||null,video_url:e.video_url||null,active:true,user_id:currentUser.id};
+  const payload={id:e.id,name:e.name,slug:slugify(e.name),description:e.description||null,group_name:e.group,muscles:e.muscles||null,secondary_muscles:e.secondary_muscles||null,movement_type:e.movement_type||null,equipment:e.equipment||null,difficulty:e.difficulty||"Iniciante",exercise_type:e.exercise_type||"Musculação",instructions:e.instructions||null,image_url:e.image_url||null,video_url:e.video_url||null,active:true,user_id:currentUser.id};
   const {data,error}=await sb.from("exercises").insert(payload).select("*").single();
   if(error)throw error;
   return normalizeExerciseRow(data);
@@ -157,14 +162,30 @@ async function syncNow(){
  toast("☁️ Sincronizado");
 }
 async function pullRemote(){
- if(!sb||!currentUser||!online)return;
+ if(!sb||!currentUser||!online)return false;
  const {data,error}=await sb.from("user_snapshots").select("data,updated_at").eq("user_id",currentUser.id).maybeSingle();
- if(error){console.warn(error);return}
- if(!data?.data)return;
+ if(error){console.warn(error);return false}
+ if(!data?.data)return false;
  const local=await dbGet(DATA_KEY);
  const localTime=local?.syncUpdatedAt||"";
- if(localTime && data.updated_at<=localTime)return;
- state=Object.assign(state,data.data);state.syncUpdatedAt=data.updated_at;sanitizeState();await dbSet(DATA_KEY,state);
+ if(localTime && data.updated_at<=localTime)return false;
+ const remote=data.data||{};
+ const localExercises=local?.exercises||state.exercises;
+ const remoteExercises=remote.exercises||{};
+ const localCount=(localExercises?.A?.length||0)+(localExercises?.B?.length||0);
+ const remoteCount=(remoteExercises?.A?.length||0)+(remoteExercises?.B?.length||0);
+ state=Object.assign(state,remote);
+ // Proteção contra snapshots antigos/vazios: nunca apague os treinos locais
+ // apenas porque a nuvem possui A/B vazios.
+ if(remoteCount===0 && localCount>0) state.exercises=structuredClone(localExercises);
+ // Se ambos vierem vazios, recupera o treino A/B padrão do aplicativo.
+ if((state.exercises?.A?.length||0)+(state.exercises?.B?.length||0)===0){
+   state.exercises=structuredClone(DEFAULTS);
+ }
+ state.syncUpdatedAt=data.updated_at;
+ sanitizeState();
+ await dbSet(DATA_KEY,state);
+ return remoteCount===0 && localCount>0;
 }
 async function setupAuth(){
  sb=await initSupabase();
@@ -173,10 +194,20 @@ async function setupAuth(){
  sb.auth.onAuthStateChange(async(_event,session)=>{currentUser=session?.user||null;if(currentUser)await afterLogin();else showLoggedOut()});
 }
 async function afterLogin(){
- await pullRemote();
+ const restoredLocal=await pullRemote();
+ await loadExerciseBank();
  $("authView").classList.add("hidden");$("appShell").classList.remove("hidden");
  $("userLabel").textContent=currentUser?.email||state.profile.name||"Conta";
- if(!state.profile.name && currentUser?.user_metadata?.name){state.profile.name=currentUser.user_metadata.name;await save()}
+ if(!state.profile.name && currentUser?.user_metadata?.name){state.profile.name=currentUser.user_metadata.name;}
+ // Se a nuvem trouxe um snapshot vazio/antigo, preserve os treinos locais
+ // e sincronize a versão recuperada para a conta.
+ if(restoredLocal || ((state.exercises?.A?.length||0)+(state.exercises?.B?.length||0)===0)){
+   sanitizeState();
+   await dbSet(DATA_KEY,state);
+   await syncNow();
+ } else if(!state.profile.name && currentUser?.user_metadata?.name){
+   await save();
+ }
  renderAll();checkLocalImportOffer();
 }
 function showLoggedOut(){$("authView").classList.remove("hidden");$("appShell").classList.add("hidden")}
@@ -265,7 +296,7 @@ function renderExercises(){
     <div class="exercise-head"><div><strong>${esc(e.name)}</strong><div class="exercise-meta"><span class="pill">${esc(e.group)}</span><span class="pill">${esc(e.equipment||"")}</span>${e.is_official?'<span class="pill">Oficial</span>':'<span class="pill">Personalizado</span>'}</div>
     <div class="muted">${esc(e.muscles||"")} · ${esc(e.movement_type||"")} · ${esc(e.difficulty||"")}</div></div>
     <button data-open-bank-ex="${esc(e.id)}">Abrir</button></div>
-  </article>`).join("")||'<div class="empty-state">Nenhum exercício encontrado.</div>';
+  </article>`).join("")||`<div class="empty-state">${backendStatus.exerciseBank==="empty"?"O banco oficial está vazio. Execute o arquivo supabase/migration-v9.sql no SQL Editor do Supabase.":backendStatus.exerciseBank==="error"?"Não foi possível consultar o banco. Verifique se a migração do Supabase foi executada.":"Nenhum exercício encontrado."}</div>`;
   $("exerciseList").querySelectorAll("[data-open-bank-ex]").forEach(b=>b.onclick=()=>openBankExercise(b.dataset.openBankEx));
 }
 function openBankExercise(id){
@@ -384,6 +415,10 @@ async function generateSmart(){
   setSmartStatus("Buscando exercícios compatíveis no banco...");
   try{
     const pool=await fetchGeneratorPool();
+    if(!pool.length){
+      setSmartStatus("O banco de exercícios está vazio. Execute supabase/migration-v9.sql no SQL Editor do Supabase e tente novamente.","error");
+      return;
+    }
     setSmartStatus("Filtrando exercícios e montando uma sessão que caiba no tempo...");
     const built=buildSmartWorkout(pool,{groups,goal,time,eq,level,avoid,variety});
     if(!built){
@@ -397,7 +432,12 @@ async function generateSmart(){
     };
     renderSmartResult(r);setSmartStatus("TREINO GERADO");
   }catch(e){
-    console.error(e);$("smartResult").innerHTML="";setSmartStatus("Não foi possível consultar o banco de exercícios. Verifique a conexão e tente novamente.","error");
+    console.error(e);$("smartResult").innerHTML="";
+    const msg=String(e?.message||e||"");
+    const schemaHint=/column .* does not exist|schema cache|relation .* does not exist/i.test(msg)
+      ? "O banco do Supabase ainda não está na estrutura desta versão. Execute supabase/migration-v9.sql no SQL Editor."
+      : "Não foi possível consultar o banco de exercícios. Verifique a conexão e as permissões do Supabase.";
+    setSmartStatus(schemaHint,"error");
   }finally{
     btn.disabled=false;btn.textContent="🤖 GERAR TREINO";
   }
@@ -439,7 +479,36 @@ async function useSmartWorkout(){
   }
   await save();toast("Treino salvo e carregado na área de treino.");showView("workoutView");
 }
-async function askAI(prompt){if(!prompt)return;if(!sb){toast("Configure o Supabase para usar a IA.");return}addBubble("user",prompt);addBubble("ai","Pensando...");const context={question:prompt,workout:state.workout,exercises:(state.exerciseBank.length?state.exerciseBank:allExercises()).slice(0,100),recentSessions:state.sessions.slice(-5),settings:{defaultRest:getRestSeconds()}};const {data,error}=await sb.functions.invoke("ai-chat",{body:context});const bubbles=[...document.querySelectorAll(".bubble.ai")];if(bubbles.length)bubbles.at(-1).textContent=error?"Não foi possível obter uma resposta agora.":(data?.answer||"Sem resposta.");if(data?.answer){state.ai.push({id:uid(),date:new Date().toISOString(),question:prompt,answer:data.answer});await save()}}
+async function askAI(prompt){
+  if(!prompt)return;
+  if(!sb){toast("Configure o Supabase para usar a IA.");return}
+  addBubble("user",prompt);addBubble("ai","Pensando...");
+  const context={question:prompt,workout:state.workout,exercises:(state.exerciseBank.length?state.exerciseBank:allExercises()).slice(0,100),recentSessions:state.sessions.slice(-5),settings:{defaultRest:getRestSeconds()}};
+  try{
+    const {data,error}=await sb.functions.invoke("ai-chat",{body:context});
+    const bubbles=[...document.querySelectorAll(".bubble.ai")];
+    const answer=data?.answer||"";
+    if(error){
+      backendStatus.ai="error";
+      const detail=error?.context?.body?.error||error?.message||"Erro desconhecido";
+      if(bubbles.length)bubbles.at(-1).textContent=`IA indisponível: ${detail}`;
+      return;
+    }
+    if(!answer){
+      backendStatus.ai="error";
+      if(bubbles.length)bubbles.at(-1).textContent="A função da IA respondeu sem conteúdo. Verifique a Edge Function ai-chat e o secret OPENAI_API_KEY.";
+      return;
+    }
+    backendStatus.ai="ok";
+    if(bubbles.length)bubbles.at(-1).textContent=answer;
+    state.ai.push({id:uid(),date:new Date().toISOString(),question:prompt,answer});await save();
+  }catch(e){
+    backendStatus.ai="error";
+    const bubbles=[...document.querySelectorAll(".bubble.ai")];
+    if(bubbles.length)bubbles.at(-1).textContent=`IA indisponível: ${e?.message||e}`;
+    console.error("Pergunte à IA:",e);
+  }
+}
 function addBubble(type,text){const el=document.createElement("div");el.className=`bubble ${type}`;el.textContent=text;$("aiMessages").appendChild(el);el.scrollIntoView({behavior:"smooth"})}
 
 function initAudio(){if(!state.settings.soundEnabled)return Promise.resolve(false);try{audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==="suspended")return audioCtx.resume().then(()=>audioCtx.state==="running");return Promise.resolve(audioCtx.state==="running")}catch(e){return Promise.resolve(false)}}

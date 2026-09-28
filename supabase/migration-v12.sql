@@ -17,7 +17,10 @@ alter table public.exercises add column if not exists is_official boolean not nu
 create unique index if not exists exercises_official_slug_uq on public.exercises(slug) where is_official=true;
 create unique index if not exists exercise_videos_user_exercise_uq on public.exercise_videos(user_id,exercise_id);
 
-update public.exercises set muscle_group=coalesce(muscle_group,group_name), active=coalesce(active,true);
+update public.exercises
+set muscle_group=coalesce(nullif(trim(muscle_group),''),nullif(trim(group_name),''),'Corpo inteiro'),
+    group_name=coalesce(nullif(trim(muscle_group),''),nullif(trim(group_name),''),'Corpo inteiro'),
+    active=coalesce(active,true);
 
 insert into public.exercises (name,slug,group_name,muscle_group,muscles,secondary_muscles,equipment,difficulty,exercise_type,movement_type,description,instructions,image_url,video_url,is_official,active) select 'Supino máquina','supino-maquina','Peito','Peito','Peitoral','','Máquinas','Iniciante','musculacao','empurrar', 'Exercício oficial do banco Meu Treino.','Execute com controle, amplitude confortável e técnica consistente.',null,null,true,true where not exists (select 1 from public.exercises e where e.slug='supino-maquina' and e.is_official=true);
 insert into public.exercises (name,slug,group_name,muscle_group,muscles,secondary_muscles,equipment,difficulty,exercise_type,movement_type,description,instructions,image_url,video_url,is_official,active) select 'Supino reto com barra','supino-reto-com-barra','Peito','Peito','Peitoral','','Barras','Iniciante','musculacao','empurrar', 'Exercício oficial do banco Meu Treino.','Execute com controle, amplitude confortável e técnica consistente.',null,null,true,true where not exists (select 1 from public.exercises e where e.slug='supino-reto-com-barra' and e.is_official=true);
@@ -119,3 +122,84 @@ create policy "owner_select" on public.profiles for select using (id = auth.uid(
 create policy "owner_insert" on public.profiles for insert with check (id = auth.uid());
 create policy "owner_update" on public.profiles for update using (id = auth.uid()) with check (id = auth.uid());
 create policy "owner_delete" on public.profiles for delete using (id = auth.uid());
+
+
+-- Correção v12.1: usa muscle_group como fonte oficial e corrige registros oficiais existentes pelo slug.
+update public.exercises
+set muscle_group=coalesce(nullif(trim(muscle_group),''),nullif(trim(group_name),''),'Corpo inteiro'),
+    group_name=coalesce(nullif(trim(muscle_group),''),nullif(trim(group_name),''),'Corpo inteiro'),
+    active=coalesce(active,true);
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='supino-maquina' and is_official=true;
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='supino-reto-com-barra' and is_official=true;
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='supino-inclinado-com-barra' and is_official=true;
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='supino-inclinado-com-halteres' and is_official=true;
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='supino-reto-com-halteres' and is_official=true;
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='crucifixo-maquina' and is_official=true;
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='crucifixo-com-halteres' and is_official=true;
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='crossover-na-polia' and is_official=true;
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='peck-deck' and is_official=true;
+update public.exercises set muscle_group='Peito', group_name='Peito' where slug='flexao-de-bracos' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='puxada-frontal' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='puxada-neutra' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='remada-baixa-na-polia' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='remada-curvada-com-barra' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='remada-unilateral-com-halter' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='remada-maquina-articulada' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='pulldown-na-polia' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='pullover-na-polia' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='barra-fixa' and is_official=true;
+update public.exercises set muscle_group='Costas', group_name='Costas' where slug='remada-cavalinho' and is_official=true;
+update public.exercises set muscle_group='Ombros', group_name='Ombros' where slug='desenvolvimento-na-maquina' and is_official=true;
+update public.exercises set muscle_group='Ombros', group_name='Ombros' where slug='desenvolvimento-com-halteres' and is_official=true;
+update public.exercises set muscle_group='Ombros', group_name='Ombros' where slug='desenvolvimento-com-barra' and is_official=true;
+update public.exercises set muscle_group='Ombros', group_name='Ombros' where slug='elevacao-lateral-com-halteres' and is_official=true;
+update public.exercises set muscle_group='Ombros', group_name='Ombros' where slug='elevacao-lateral-na-polia' and is_official=true;
+update public.exercises set muscle_group='Ombros', group_name='Ombros' where slug='elevacao-frontal-com-halteres' and is_official=true;
+update public.exercises set muscle_group='Ombros', group_name='Ombros' where slug='crucifixo-inverso-maquina' and is_official=true;
+update public.exercises set muscle_group='Ombros', group_name='Ombros' where slug='face-pull' and is_official=true;
+update public.exercises set muscle_group='Bíceps', group_name='Bíceps' where slug='rosca-direta-com-barra' and is_official=true;
+update public.exercises set muscle_group='Bíceps', group_name='Bíceps' where slug='rosca-direta-com-halteres' and is_official=true;
+update public.exercises set muscle_group='Bíceps', group_name='Bíceps' where slug='rosca-alternada' and is_official=true;
+update public.exercises set muscle_group='Bíceps', group_name='Bíceps' where slug='rosca-martelo' and is_official=true;
+update public.exercises set muscle_group='Bíceps', group_name='Bíceps' where slug='rosca-scott' and is_official=true;
+update public.exercises set muscle_group='Bíceps', group_name='Bíceps' where slug='rosca-concentrada' and is_official=true;
+update public.exercises set muscle_group='Bíceps', group_name='Bíceps' where slug='rosca-na-polia-baixa' and is_official=true;
+update public.exercises set muscle_group='Tríceps', group_name='Tríceps' where slug='triceps-na-polia-com-corda' and is_official=true;
+update public.exercises set muscle_group='Tríceps', group_name='Tríceps' where slug='triceps-na-polia-com-barra' and is_official=true;
+update public.exercises set muscle_group='Tríceps', group_name='Tríceps' where slug='triceps-frances-com-halter' and is_official=true;
+update public.exercises set muscle_group='Tríceps', group_name='Tríceps' where slug='triceps-testa-com-barra' and is_official=true;
+update public.exercises set muscle_group='Tríceps', group_name='Tríceps' where slug='triceps-unilateral-na-polia' and is_official=true;
+update public.exercises set muscle_group='Tríceps', group_name='Tríceps' where slug='mergulho-assistido' and is_official=true;
+update public.exercises set muscle_group='Tríceps', group_name='Tríceps' where slug='triceps-maquina' and is_official=true;
+update public.exercises set muscle_group='Quadríceps', group_name='Quadríceps' where slug='leg-press-45' and is_official=true;
+update public.exercises set muscle_group='Quadríceps', group_name='Quadríceps' where slug='agachamento-no-smith' and is_official=true;
+update public.exercises set muscle_group='Quadríceps', group_name='Quadríceps' where slug='agachamento-livre' and is_official=true;
+update public.exercises set muscle_group='Quadríceps', group_name='Quadríceps' where slug='cadeira-extensora' and is_official=true;
+update public.exercises set muscle_group='Quadríceps', group_name='Quadríceps' where slug='hack-squat' and is_official=true;
+update public.exercises set muscle_group='Quadríceps', group_name='Quadríceps' where slug='afundo-no-smith' and is_official=true;
+update public.exercises set muscle_group='Quadríceps', group_name='Quadríceps' where slug='passada-com-halteres' and is_official=true;
+update public.exercises set muscle_group='Posterior de coxa', group_name='Posterior de coxa' where slug='cadeira-flexora' and is_official=true;
+update public.exercises set muscle_group='Posterior de coxa', group_name='Posterior de coxa' where slug='mesa-flexora' and is_official=true;
+update public.exercises set muscle_group='Posterior de coxa', group_name='Posterior de coxa' where slug='stiff-com-halteres' and is_official=true;
+update public.exercises set muscle_group='Posterior de coxa', group_name='Posterior de coxa' where slug='stiff-com-barra' and is_official=true;
+update public.exercises set muscle_group='Posterior de coxa', group_name='Posterior de coxa' where slug='levantamento-terra-romeno' and is_official=true;
+update public.exercises set muscle_group='Posterior de coxa', group_name='Posterior de coxa' where slug='flexao-nordica' and is_official=true;
+update public.exercises set muscle_group='Glúteos', group_name='Glúteos' where slug='hip-thrust' and is_official=true;
+update public.exercises set muscle_group='Glúteos', group_name='Glúteos' where slug='glute-bridge' and is_official=true;
+update public.exercises set muscle_group='Glúteos', group_name='Glúteos' where slug='cadeira-abdutora' and is_official=true;
+update public.exercises set muscle_group='Glúteos', group_name='Glúteos' where slug='coice-na-polia' and is_official=true;
+update public.exercises set muscle_group='Glúteos', group_name='Glúteos' where slug='agachamento-sumo' and is_official=true;
+update public.exercises set muscle_group='Glúteos', group_name='Glúteos' where slug='afundo-bulgaro' and is_official=true;
+update public.exercises set muscle_group='Adutores', group_name='Adutores' where slug='cadeira-adutora' and is_official=true;
+update public.exercises set muscle_group='Adutores', group_name='Adutores' where slug='aducao-na-polia' and is_official=true;
+update public.exercises set muscle_group='Adutores', group_name='Adutores' where slug='agachamento-sumo' and is_official=true;
+update public.exercises set muscle_group='Panturrilhas', group_name='Panturrilhas' where slug='panturrilha-em-pe-na-maquina' and is_official=true;
+update public.exercises set muscle_group='Panturrilhas', group_name='Panturrilhas' where slug='panturrilha-sentada' and is_official=true;
+update public.exercises set muscle_group='Panturrilhas', group_name='Panturrilhas' where slug='panturrilha-no-leg-press' and is_official=true;
+update public.exercises set muscle_group='Panturrilhas', group_name='Panturrilhas' where slug='panturrilha-unilateral' and is_official=true;
+update public.exercises set muscle_group='Abdômen', group_name='Abdômen' where slug='abdominal-maquina' and is_official=true;
+update public.exercises set muscle_group='Abdômen', group_name='Abdômen' where slug='abdominal-na-polia' and is_official=true;
+update public.exercises set muscle_group='Abdômen', group_name='Abdômen' where slug='elevacao-de-pernas' and is_official=true;
+update public.exercises set muscle_group='Abdômen', group_name='Abdômen' where slug='prancha' and is_official=true;
+update public.exercises set muscle_group='Abdômen', group_name='Abdômen' where slug='pallof-press' and is_official=true;
+update public.exercises set muscle_group='Glúteos', group_name='Glúteos' where slug='agachamento-sumo' and is_official=true;

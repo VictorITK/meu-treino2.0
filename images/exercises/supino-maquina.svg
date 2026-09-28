@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 220">
+<rect width="320" height="220" rx="22" fill="#eef2ff"/>
+<rect x="20" y="20" width="280" height="180" rx="18" fill="#fff" stroke="#c7d2fe" stroke-width="3"/>
+<g stroke="#111827" stroke-width="7" stroke-linecap="round" fill="none">
+<circle cx="145" cy="75" r="16" fill="#111827"/><path d="M145 92l20 45 38 18M162 110l48-35M165 137l-48 25M203 93l38-18M115 162h105M110 162v18M215 162v18"/>
+</g><text x="160" y="190" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#111827">SUPINO MÁQUINA</text></svg>

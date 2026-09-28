@@ -24,7 +24,9 @@
     <form id="loginForm">
       <label>E-mail<input id="loginEmail" type="email" autocomplete="email" required></label>
       <label>Senha<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <label class="switch remember-switch"><input id="rememberAccount" type="checkbox" checked><span>✓ Lembrar minha conta</span></label>
       <button class="primary big-btn" type="submit">Entrar</button>
+      <button id="passkeyLoginBtn" class="passkey-btn" type="button">🔐 Entrar com Face ID / biometria</button>
       <button class="link-btn" type="button" id="forgotPasswordBtn">Esqueci minha senha</button>
     </form>
     <form id="signupForm" class="hidden">
@@ -95,19 +97,47 @@
 <section id="aiView" class="view"><div class="page-head"><h1>🤖 Pergunte à IA</h1></div><div class="quick-grid ai-shortcuts"><button data-ai="Exercícios">🏋️ Exercícios</button><button data-ai="Substituir exercício">🔄 Substituir exercício</button><button data-ai="Músculos trabalhados">💪 Músculos trabalhados</button><button data-ai="Como executar">📖 Como executar</button><button data-ai="Meu treino">📊 Meu treino</button></div><div id="aiMessages" class="chat"></div><form id="aiForm" class="chat-form"><input id="aiInput" placeholder="Pergunte sobre treino ou exercício..." autocomplete="off"><button class="primary">Enviar</button></form></section>
 
 <section id="smartView" class="view"><div class="page-head"><h1>✨ Treino Inteligente</h1></div>
-<div class="card smart-form">
-<label>Grupos musculares<select id="smartGroups" multiple size="5"><option>Peito</option><option>Costas</option><option>Ombros</option><option>Bíceps</option><option>Tríceps</option><option>Quadríceps</option><option>Posterior de coxa</option><option>Glúteos</option><option>Panturrilhas</option><option>Abdômen</option><option>Corpo inteiro</option></select></label>
-<div class="form-grid"><label>Objetivo<select id="smartGoal"><option>Hipertrofia</option><option>Força</option><option>Resistência muscular</option><option>Manutenção</option><option>Variar o treino</option></select></label><label>Tempo<select id="smartTime"><option value="20">20 minutos</option><option value="30">30 minutos</option><option value="45" selected>45 minutos</option><option value="60">60 minutos</option><option value="custom">Personalizado</option></select></label></div>
-<label id="smartCustomTimeWrap" class="hidden">Tempo personalizado (min)<input id="smartCustomTime" type="number" min="10" max="180" value="45"></label>
-<label>Equipamentos<select id="smartEquipment" multiple size="4"><option>Academia completa</option><option>Máquinas</option><option>Halteres</option><option>Barras</option><option>Polias</option><option>Peso corporal</option></select></label>
-<label>Nível<select id="smartLevel"><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select></label>
-<label class="switch"><input id="smartVariety" type="checkbox"><span>Quero exercícios diferentes dos meus últimos treinos</span></label>
-<label>Exercícios a evitar<input id="smartAvoid" placeholder="Ex.: agachamento, supino..."></label>
-<button id="generateSmartBtn" class="primary big-btn">🤖 GERAR TREINO</button></div>
-<div id="smartResult"></div></section>
+  <div class="card smart-form">
+    <div class="filter-section">
+      <div class="filter-title">Grupos musculares <span class="muted small">Selecione um ou mais</span></div>
+      <div id="smartGroupsChips" class="choice-grid" data-choice-container="smartGroups"></div>
+      <select id="smartGroups" class="filter-state-select hidden" multiple aria-hidden="true">
+        <option>Peito</option><option>Costas</option><option>Ombros</option><option>Bíceps</option><option>Tríceps</option><option>Quadríceps</option><option>Posterior de coxa</option><option>Glúteos</option><option>Adutores</option><option>Panturrilhas</option><option>Abdômen</option><option>Corpo inteiro</option>
+      </select>
+    </div>
+    <div class="filter-section">
+      <div class="filter-title">Objetivo</div>
+      <div id="smartGoalChips" class="choice-grid compact" data-choice-container="smartGoal"></div>
+      <select id="smartGoal" class="filter-state-select hidden" aria-hidden="true"><option>Hipertrofia</option><option>Força</option><option>Resistência muscular</option><option>Manutenção</option><option>Variar o treino</option></select>
+    </div>
+    <div class="filter-section">
+      <div class="filter-title">Tempo</div>
+      <div id="smartTimeChips" class="choice-grid compact" data-choice-container="smartTime"></div>
+      <select id="smartTime" class="filter-state-select hidden" aria-hidden="true"><option value="20">20 minutos</option><option value="30">30 minutos</option><option value="45" selected>45 minutos</option><option value="60">60 minutos</option><option value="custom">Personalizado</option></select>
+      <label id="smartCustomTimeWrap" class="hidden">Tempo personalizado (min)<input id="smartCustomTime" type="number" min="10" max="180" value="45"></label>
+    </div>
+    <div class="filter-section">
+      <div class="filter-title">Equipamentos <span class="muted small">Selecione um ou mais</span></div>
+      <div id="smartEquipmentChips" class="choice-grid" data-choice-container="smartEquipment"></div>
+      <select id="smartEquipment" class="filter-state-select hidden" multiple aria-hidden="true"><option>Academia completa</option><option>Máquinas</option><option>Halteres</option><option>Barras</option><option>Polias</option><option>Peso corporal</option></select>
+    </div>
+    <div class="filter-section">
+      <div class="filter-title">Nível</div>
+      <div id="smartLevelChips" class="choice-grid compact" data-choice-container="smartLevel"></div>
+      <select id="smartLevel" class="filter-state-select hidden" aria-hidden="true"><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select>
+    </div>
+    <label class="switch"><input id="smartVariety" type="checkbox"><span>Quero exercícios diferentes dos meus últimos treinos</span></label>
+    <label>Exercícios a evitar<input id="smartAvoid" placeholder="Ex.: agachamento, supino..."></label>
+    <button id="generateSmartBtn" class="primary big-btn">🤖 GERAR TREINO</button>
+  </div>
+  <div id="smartStatus" class="smart-status hidden" role="status"></div>
+  <div id="smartResult"></div></section>
 
 <section id="settingsView" class="view"><div class="page-head"><h1>Configurações</h1></div>
-<div class="card"><div class="section-title">Conta</div><div id="accountInfo" class="muted"></div><button id="logoutBtn" class="danger">Sair da conta</button></div>
+<div class="card"><div class="section-title">Conta</div><div id="accountInfo" class="muted"></div>
+    <div id="passkeySettings" class="passkey-settings"></div>
+    <button id="logoutBtn" class="danger">Sair da conta</button>
+  </div>
 <div class="card"><div class="section-title">Cronômetro</div><label>Descanso padrão (segundos)<input id="defaultRest" type="number" min="5" max="600" step="1" value="40" inputmode="numeric"><div class="muted small">40 segundos é o padrão inicial. Você pode definir outro tempo entre 5 e 600 segundos.</div></label><label class="switch"><input id="soundEnabled" type="checkbox"><span>🔊 Apito ao terminar</span></label><label class="switch"><input id="autoStartRest" type="checkbox"><span>Iniciar descanso automaticamente</span></label></div>
 <div class="card"><div class="section-title">Aparência</div><select id="themeSelect"><option value="auto">⚙️ Automático</option><option value="light">☀️ Claro</option><option value="dark">🌙 Escuro</option></select></div>
 <div class="card"><div class="section-title">Backup</div><p class="muted">Backup independente da nuvem. Inclui dados locais e metadados das fotos.</p><div class="actions"><button id="exportBackup" class="primary">⬇️ Exportar backup</button><button id="importBackup">⬆️ Importar backup</button><input id="backupFile" type="file" accept="application/json" hidden></div></div>
@@ -118,7 +148,7 @@
 </div>
 
 <div id="modalRoot"></div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.0"></script>
 <script src="js/config.js"></script>
 <script src="js/app.js"></script>
 </body>

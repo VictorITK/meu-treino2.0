@@ -17,5 +17,7 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ]
+  ],
+  "id": "./",
+  "description": "Diário de musculação com treino inteligente, histórico e sincronização."
 }
